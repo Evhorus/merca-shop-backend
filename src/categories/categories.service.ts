@@ -134,18 +134,19 @@ export class CategoriesService {
 
       imagesNames = Array.from(new Set(imagesNames));
 
-      await transaction.categoryImage.deleteMany();
-
-      await Promise.all(
-        imagesNames.map((image) => {
-          return transaction.categoryImage.create({
-            data: {
-              categoryId: createdCategory.id,
-              image: image,
-            },
-          });
-        }),
-      );
+      if (imagesNames.length > 0) {
+        await transaction.categoryImage.deleteMany();
+        await Promise.all(
+          imagesNames.map((image) => {
+            return transaction.categoryImage.create({
+              data: {
+                categoryId: createdCategory.id,
+                image: image,
+              },
+            });
+          }),
+        );
+      }
 
       return createdCategory;
     });
