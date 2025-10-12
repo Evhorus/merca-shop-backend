@@ -13,3 +13,19 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+model Category {
+  id          String          @id @default(uuid())
+  name        String
+  slug        String          @unique
+  description String?
+  images      CategoryImage[]
+  isActive    Boolean
+}
+
+model CategoryImage {
+  id         String    @id @default(uuid())
+  image      String    @unique
+  categoryId String?
+  Category   Category? @relation(fields: [categoryId], references: [id])
+}
