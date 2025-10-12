@@ -27,5 +27,5 @@ model CategoryImage {
   id         String    @id @default(uuid())
   image      String    @unique
   categoryId String?
-  Category   Category? @relation(fields: [categoryId], references: [id])
+  Category   Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 }

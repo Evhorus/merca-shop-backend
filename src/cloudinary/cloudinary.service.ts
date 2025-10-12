@@ -31,4 +31,13 @@ export class CloudinaryService {
         .end(file.buffer);
     });
   }
+
+  async deleteImagesByFolder(folder: string) {
+    try {
+      await cloudinary.api.delete_resources_by_prefix(folder);
+      await cloudinary.api.delete_folder(folder);
+    } catch (error) {
+      console.log(error);
+    }
+  }
 }
