@@ -7,6 +7,8 @@ const envSchema = z.object({
 
   DATABASE_URL: z.string().min(1),
 
+  CLIENT_URL: z.string().min(1),
+
   CLERK_PUBLISHABLE_KEY: z.string().min(1),
   CLERK_SECRET_KEY: z.string().min(1),
 
@@ -27,6 +29,8 @@ export const envs = {
   NODE_ENV: envVars.NODE_ENV,
 
   DATABASE_URL: envVars.DATABASE_URL,
+
+  CLIENT_URL: envVars.CLIENT_URL,
 
   CLERK_PUBLISHABLE_KEY: envVars.CLERK_PUBLISHABLE_KEY,
   CLERK_SECRET_KEY: envVars.CLERK_SECRET_KEY,
