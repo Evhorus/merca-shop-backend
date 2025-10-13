@@ -32,7 +32,7 @@ export class CategoriesService {
       );
     }
 
-    const result = await this.prisma.$transaction(async (transaction) => {
+    const category = await this.prisma.$transaction(async (transaction) => {
       const createdCategory = await transaction.category.create({
         data: {
           name: createCategoryDto.name,
@@ -40,6 +40,7 @@ export class CategoriesService {
           isActive: createCategoryDto.isActive,
           slug: createCategoryDto.slug,
         },
+        include: { images: true },
       });
 
       const images = await this.filesService.uploadImages(
@@ -58,12 +59,13 @@ export class CategoriesService {
         }),
       );
 
-      return createdCategory;
+      return {
+        ...createdCategory,
+        images: images.fileNames.map((image) => ({ image })),
+      };
     });
 
-    return {
-      result,
-    };
+    return { ...category, images: category.images.map((img) => img.image) };
   }
 
   async findAll(paginationDto: PaginationDto) {
@@ -95,13 +97,14 @@ export class CategoriesService {
       where: {
         id,
       },
+      include: { images: true },
     });
 
     if (!category) {
       throw new NotFoundException('Category not found');
     }
 
-    return category;
+    return { ...category, images: category.images.map((img) => img.image) };
   }
 
   async update(
@@ -111,47 +114,54 @@ export class CategoriesService {
   ) {
     await this.findOne(id);
 
-    const result = await this.prisma.$transaction(async (transaction) => {
-      const createdCategory = await transaction.category.update({
-        where: { id },
-        data: {
-          name: updateCategoryDto.name,
-          description: updateCategoryDto.description,
-          isActive: updateCategoryDto.isActive,
-          slug: updateCategoryDto.slug,
-        },
-      });
+    const updatedCategory = await this.prisma.$transaction(
+      async (transaction) => {
+        const createdCategory = await transaction.category.update({
+          where: { id },
+          data: {
+            name: updateCategoryDto.name,
+            description: updateCategoryDto.description,
+            isActive: updateCategoryDto.isActive,
+            slug: updateCategoryDto.slug,
+          },
+        });
 
-      let imagesNames: string[] = updateCategoryDto.images || [];
+        let imagesNames: string[] = updateCategoryDto.images || [];
 
-      if (files.length > 0) {
-        const images = await this.filesService.uploadImages(
-          files,
-          `categories/${createdCategory.id}`,
-        );
-        imagesNames.push(...images.fileNames);
-      }
+        if (files.length > 0) {
+          const images = await this.filesService.uploadImages(
+            files,
+            `categories/${createdCategory.id}`,
+          );
+          imagesNames.push(...images.fileNames);
+        }
 
-      imagesNames = Array.from(new Set(imagesNames));
+        imagesNames = Array.from(new Set(imagesNames));
 
-      if (imagesNames.length > 0) {
-        await transaction.categoryImage.deleteMany();
-        await Promise.all(
-          imagesNames.map((image) => {
-            return transaction.categoryImage.create({
-              data: {
-                categoryId: createdCategory.id,
-                image: image,
-              },
-            });
-          }),
-        );
-      }
+        if (imagesNames.length > 0) {
+          await transaction.categoryImage.deleteMany({
+            where: { categoryId: id },
+          });
+          await Promise.all(
+            imagesNames.map((image) => {
+              return transaction.categoryImage.create({
+                data: {
+                  categoryId: createdCategory.id,
+                  image: image,
+                },
+              });
+            }),
+          );
+        }
 
-      return createdCategory;
-    });
+        return {
+          ...createdCategory,
+          images: imagesNames,
+        };
+      },
+    );
 
-    return result;
+    return updatedCategory;
   }
 
   async remove(id: string) {

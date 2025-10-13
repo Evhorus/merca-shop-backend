@@ -29,9 +29,13 @@ export class CreateCategoryDto {
   @NotContains(' ', { message: 'Slug should NOT contain whitespace.' })
   slug: string;
 
+  @IsOptional()
+  @Transform(({ value }) =>
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    value ? (Array.isArray(value) ? value : [value]) : [],
+  )
   @IsArray()
   @IsString({ each: true })
-  @IsOptional()
   images?: string[];
 
   @IsBoolean()

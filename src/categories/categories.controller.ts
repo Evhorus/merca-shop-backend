@@ -43,6 +43,7 @@ export class CategoriesController {
     return this.categoriesService.findAll(paginationDto);
   }
 
+  @Public()
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.categoriesService.findOne(id);
