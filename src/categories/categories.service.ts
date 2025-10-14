@@ -10,7 +10,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { PaginationDto } from 'src/common/dtos/pagination.dto';
 import { FilesService } from 'src/files/files.service';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
-import { Category } from 'generated/prisma';
+import { Category, Prisma } from 'generated/prisma';
 import { CategoriesResponse } from './interfaces/categories-response.interface';
 import { CategoryResponse } from './interfaces/category-response.interface';
 
@@ -76,7 +76,11 @@ export class CategoriesService {
   }
 
   async findAll(paginationDto: PaginationDto): Promise<CategoriesResponse> {
-    const { limit = 10, offset = 0 } = paginationDto;
+    const { limit = 10, offset = 0, q } = paginationDto;
+
+    const where: Prisma.CategoryWhereInput = {
+      name: { contains: q, mode: 'insensitive' },
+    };
 
     const [categories, totalCategories] = await Promise.all([
       this.prisma.category.findMany({
@@ -84,8 +88,9 @@ export class CategoriesService {
         skip: offset,
         include: { images: true },
         orderBy: { id: 'asc' },
+        where,
       }),
-      this.prisma.category.count(),
+      this.prisma.category.count({ where }),
     ]);
 
     return {
