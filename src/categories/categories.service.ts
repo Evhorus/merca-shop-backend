@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -9,9 +10,14 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { PaginationDto } from 'src/common/dtos/pagination.dto';
 import { FilesService } from 'src/files/files.service';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { Category } from 'generated/prisma';
+import { CategoriesResponse } from './interfaces/categories-response.interface';
+import { CategoryResponse } from './interfaces/category-response.interface';
 
 @Injectable()
 export class CategoriesService {
+  private readonly logger = new Logger(CategoriesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly filesService: FilesService,
@@ -21,66 +27,66 @@ export class CategoriesService {
   async create(
     createCategoryDto: CreateCategoryDto,
     files: Express.Multer.File[],
-  ) {
+  ): Promise<CategoryResponse> {
     const categoryExist = await this.prisma.category.findFirst({
       where: { name: createCategoryDto.name },
     });
 
     if (categoryExist) {
-      throw new BadRequestException(
-        `Category with name ${createCategoryDto.name} already exist`,
-      );
+      throw new BadRequestException(this.ERROR_MESSAGES.CATEGORY_EXISTS);
     }
 
-    const category = await this.prisma.$transaction(async (transaction) => {
-      const createdCategory = await transaction.category.create({
-        data: {
-          name: createCategoryDto.name,
-          description: createCategoryDto.description,
-          isActive: createCategoryDto.isActive,
-          slug: createCategoryDto.slug,
-        },
-        include: { images: true },
-      });
+    return await this.prisma.$transaction(async (transaction) => {
+      try {
+        const createdCategory = await transaction.category.create({
+          data: {
+            name: createCategoryDto.name,
+            description: createCategoryDto.description,
+            isActive: createCategoryDto.isActive,
+            slug: createCategoryDto.slug,
+          },
+          include: { images: true },
+        });
 
-      const images = await this.filesService.uploadImages(
-        files,
-        `categories/${createdCategory.id}`,
-      );
+        const images = await this.filesService.uploadImages(
+          files,
+          `categories/${createdCategory.id}`,
+        );
 
-      await Promise.all(
-        images.fileNames.map((image) => {
-          return transaction.categoryImage.create({
-            data: {
-              categoryId: createdCategory.id,
-              image: image,
-            },
-          });
-        }),
-      );
+        await Promise.all(
+          images.fileNames.map((image) => {
+            return transaction.categoryImage.create({
+              data: {
+                categoryId: createdCategory.id,
+                image: image,
+              },
+            });
+          }),
+        );
 
-      return {
-        ...createdCategory,
-        images: images.fileNames.map((image) => ({ image })),
-      };
+        return {
+          ...createdCategory,
+          images: images.fileNames,
+        };
+      } catch (error) {
+        this.logger.error(`Transaction failed: ${error}`);
+        throw error;
+      }
     });
-
-    return { ...category, images: category.images.map((img) => img.image) };
   }
 
-  async findAll(paginationDto: PaginationDto) {
+  async findAll(paginationDto: PaginationDto): Promise<CategoriesResponse> {
     const { limit = 10, offset = 0 } = paginationDto;
 
-    const categories = await this.prisma.category.findMany({
-      take: limit,
-      skip: offset,
-      include: { images: true },
-      orderBy: { id: 'asc' },
-    });
-
-    const totalCategories = await this.prisma.category.count({
-      where: {},
-    });
+    const [categories, totalCategories] = await Promise.all([
+      this.prisma.category.findMany({
+        take: limit,
+        skip: offset,
+        include: { images: true },
+        orderBy: { id: 'asc' },
+      }),
+      this.prisma.category.count(),
+    ]);
 
     return {
       count: totalCategories,
@@ -92,7 +98,7 @@ export class CategoriesService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<CategoryResponse> {
     const category = await this.prisma.category.findUnique({
       where: {
         id,
@@ -101,7 +107,7 @@ export class CategoriesService {
     });
 
     if (!category) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundException(this.ERROR_MESSAGES.CATEGORY_NOT_FOUND);
     }
 
     return { ...category, images: category.images.map((img) => img.image) };
@@ -111,11 +117,11 @@ export class CategoriesService {
     id: string,
     updateCategoryDto: UpdateCategoryDto,
     files: Array<Express.Multer.File>,
-  ) {
+  ): Promise<CategoryResponse> {
     await this.findOne(id);
 
-    const updatedCategory = await this.prisma.$transaction(
-      async (transaction) => {
+    return await this.prisma.$transaction(async (transaction) => {
+      try {
         const createdCategory = await transaction.category.update({
           where: { id },
           data: {
@@ -158,19 +164,26 @@ export class CategoriesService {
           ...createdCategory,
           images: imagesNames,
         };
-      },
-    );
-
-    return updatedCategory;
+      } catch (error) {
+        this.logger.error(`Transaction failed: ${error}`);
+        throw error;
+      }
+    });
   }
 
-  async remove(id: string) {
+  async remove(id: string): Promise<Category> {
     const category = await this.findOne(id);
-    await this.prisma.category.delete({ where: { id } });
+    const deleteCategory = await this.prisma.category.delete({
+      where: { id },
+    });
     await this.cloudinary.deleteImagesByFolder(`categories/${category.id}`);
 
-    return {
-      message: 'category deleted',
-    };
+    return deleteCategory;
   }
+
+  private readonly ERROR_MESSAGES = {
+    CATEGORY_EXISTS: 'Category with this name already exists',
+    CATEGORY_NOT_FOUND: 'Category not found',
+    CATEGORY_DELETED: 'Category deleted successfully',
+  } as const;
 }
