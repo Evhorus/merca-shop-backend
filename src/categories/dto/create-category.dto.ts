@@ -13,10 +13,18 @@ import {
 
 export class CreateCategoryDto {
   @IsString()
+  @Matches(/^\S+(?: \S+)*$/, {
+    message:
+      'Name must be normalized: no leading or trailing spaces, and no consecutive spaces',
+  })
   name: string;
 
   @IsString()
   @IsOptional()
+  @Matches(/^\S+(?: \S+)*$/, {
+    message:
+      'Description must be normalized: no leading or trailing spaces, and no consecutive spaces',
+  })
   description?: string;
 
   @IsString()
