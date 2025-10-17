@@ -6,24 +6,23 @@ import {
   Patch,
   Param,
   Delete,
-  Query,
   UseInterceptors,
   UploadedFiles,
+  Query,
 } from '@nestjs/common';
-import { CategoriesService } from './categories.service';
-import { CreateCategoryDto } from './dto/create-category.dto';
-import { UpdateCategoryDto } from './dto/update-category.dto';
-import { PaginationDto } from 'src/common/dto/pagination.dto';
-
+import { ProductsService } from './products.service';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 import { Public } from 'src/auth/decorators/public.decorator';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { fileFilter } from 'src/files/helpers/file-filter';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
 
-@Controller('categories')
-export class CategoriesController {
-  constructor(private readonly categoriesService: CategoriesService) {}
+@Public()
+@Controller('products')
+export class ProductsController {
+  constructor(private readonly productsService: ProductsService) {}
 
-  @Public()
   @Post()
   @UseInterceptors(
     FilesInterceptor('files', 4, {
@@ -31,25 +30,27 @@ export class CategoriesController {
     }),
   )
   create(
-    @Body() createCategoryDto: CreateCategoryDto,
+    @Body() createProductDto: CreateProductDto,
     @UploadedFiles() files: Array<Express.Multer.File>,
   ) {
-    return this.categoriesService.create(createCategoryDto, files);
+    return this.productsService.create(createProductDto, files);
   }
 
-  @Public()
   @Get()
   findAll(@Query() paginationDto: PaginationDto) {
-    return this.categoriesService.findAll(paginationDto);
+    return this.productsService.findAll(paginationDto);
   }
 
-  @Public()
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.categoriesService.findOne({ where: { id } });
+    return this.productsService.findOne({
+      where: { id },
+      // withImages: true,
+      // withFeatures: true,
+      // withVariants: true,
+    });
   }
 
-  @Public()
   @Patch(':id')
   @UseInterceptors(
     FilesInterceptor('files', 4, {
@@ -58,15 +59,14 @@ export class CategoriesController {
   )
   update(
     @Param('id') id: string,
-    @Body() updateCategoryDto: UpdateCategoryDto,
+    @Body() updateProductDto: UpdateProductDto,
     @UploadedFiles() files: Array<Express.Multer.File>,
   ) {
-    return this.categoriesService.update(id, updateCategoryDto, files);
+    return this.productsService.update(id, updateProductDto, files);
   }
 
-  @Public()
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.categoriesService.remove(id);
+    return this.productsService.remove(id);
   }
 }

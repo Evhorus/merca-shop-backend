@@ -5,6 +5,7 @@ import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { FilesModule } from './files/files.module';
 import { CommonModule } from './common/common.module';
 import { CategoriesModule } from './categories/categories.module';
+import { ProductsModule } from './products/products.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { CategoriesModule } from './categories/categories.module';
     FilesModule,
     CommonModule,
     CategoriesModule,
+    ProductsModule,
   ],
 })
 export class AppModule {}

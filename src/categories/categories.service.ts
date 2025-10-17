@@ -1,18 +1,15 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import { CreateCategoryDto } from './dto/create-category.dto';
-import { UpdateCategoryDto } from './dto/update-category.dto';
+import { Injectable, Logger } from '@nestjs/common';
+import { Category, Prisma } from 'generated/prisma';
+
+import { PaginationDto } from 'src/common/dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { PaginationDto } from 'src/common/dtos/pagination.dto';
 import { FilesService } from 'src/files/files.service';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
-import { Category, Prisma } from 'generated/prisma';
-import { CategoriesResponse } from './interfaces/categories-response.interface';
-import { CategoryResponse } from './interfaces/category-response.interface';
+import { PaginatedResponse } from 'src/common/interfaces/paginated-response';
+import { CreateCategoryDto, UpdateCategoryDto } from './dto';
+
+import { ResourceNotFoundException } from 'src/common/exceptions/resource.exceptions';
+import { CategoryWithImages } from './interfaces';
 
 @Injectable()
 export class CategoriesService {
@@ -24,58 +21,47 @@ export class CategoriesService {
     private readonly cloudinary: CloudinaryService,
   ) {}
 
+  // --- Create Category --- //
   async create(
     createCategoryDto: CreateCategoryDto,
     files: Express.Multer.File[],
-  ): Promise<CategoryResponse> {
-    const categoryExist = await this.prisma.category.findFirst({
-      where: { name: createCategoryDto.name },
-    });
+  ): Promise<CategoryWithImages> {
+    return await this.prisma.$transaction(
+      async (transaction): Promise<CategoryWithImages> => {
+        try {
+          // Create Category
+          const createdCategory = await this.createCategoryWithTransaction(
+            createCategoryDto,
+            transaction,
+          );
 
-    if (categoryExist) {
-      throw new BadRequestException(this.ERROR_MESSAGES.CATEGORY_EXISTS);
-    }
+          const images = await this.filesService.uploadImages(
+            files,
+            `categories/${createdCategory.id}`,
+          );
 
-    return await this.prisma.$transaction(async (transaction) => {
-      try {
-        const createdCategory = await transaction.category.create({
-          data: {
-            name: createCategoryDto.name,
-            description: createCategoryDto.description,
-            isActive: createCategoryDto.isActive,
-            slug: createCategoryDto.slug,
-          },
-          include: { images: true },
-        });
+          await this.createCategoryImagesWithTransaction({
+            categoryId: createdCategory.id,
+            images: images.fileNames,
+            transaction,
+          });
 
-        const images = await this.filesService.uploadImages(
-          files,
-          `categories/${createdCategory.id}`,
-        );
-
-        await Promise.all(
-          images.fileNames.map((image) => {
-            return transaction.categoryImage.create({
-              data: {
-                categoryId: createdCategory.id,
-                image: image,
-              },
-            });
-          }),
-        );
-
-        return {
-          ...createdCategory,
-          images: images.fileNames,
-        };
-      } catch (error) {
-        this.logger.error(`Transaction failed: ${error}`);
-        throw error;
-      }
-    });
+          return {
+            ...createdCategory,
+            images: images.fileNames,
+          };
+        } catch (error) {
+          this.logger.error(`Transaction failed: ${error}`);
+          throw error;
+        }
+      },
+    );
   }
 
-  async findAll(paginationDto: PaginationDto): Promise<CategoriesResponse> {
+  // --- Find All Categories Paginated -- //
+  async findAll(
+    paginationDto: PaginationDto,
+  ): Promise<PaginatedResponse<CategoryWithImages>> {
     const { limit = 10, offset = 0, q } = paginationDto;
 
     const where: Prisma.CategoryWhereInput = {
@@ -96,99 +82,153 @@ export class CategoriesService {
     return {
       count: totalCategories,
       pages: Math.ceil(totalCategories / limit),
-      categories: categories.map((category) => ({
+      data: categories.map((category) => ({
         ...category,
         images: category.images.map((img) => img.image),
       })),
     };
   }
 
-  async findOne(id: string): Promise<CategoryResponse> {
+  // --- Find category --- //
+  async findOne({
+    where,
+    withImages,
+  }: {
+    where: Prisma.CategoryWhereUniqueInput;
+    withImages?: boolean;
+  }): Promise<CategoryWithImages> {
+    const include: Prisma.CategoryInclude = {
+      ...(withImages && { images: true }),
+    };
+
     const category = await this.prisma.category.findUnique({
-      where: {
-        id,
-      },
-      include: { images: true },
+      where,
+      include,
     });
 
     if (!category) {
-      throw new NotFoundException(this.ERROR_MESSAGES.CATEGORY_NOT_FOUND);
+      throw new ResourceNotFoundException('Category');
     }
 
-    return { ...category, images: category.images.map((img) => img.image) };
+    return {
+      ...category,
+      images: withImages ? category.images.map((img) => img.image) : [],
+    };
   }
 
+  // --- Update Category --- //
   async update(
     id: string,
     updateCategoryDto: UpdateCategoryDto,
     files: Array<Express.Multer.File>,
-  ): Promise<CategoryResponse> {
-    await this.findOne(id);
-
-    return await this.prisma.$transaction(async (transaction) => {
-      try {
-        const createdCategory = await transaction.category.update({
-          where: { id },
-          data: {
-            name: updateCategoryDto.name,
-            description: updateCategoryDto.description,
-            isActive: updateCategoryDto.isActive,
-            slug: updateCategoryDto.slug,
-          },
-        });
-
+  ): Promise<CategoryWithImages> {
+    await this.findOne({ where: { id } });
+    return await this.prisma.$transaction(
+      async (transaction): Promise<CategoryWithImages> => {
         let imagesNames: string[] = updateCategoryDto.images || [];
-
-        if (files.length > 0) {
-          const images = await this.filesService.uploadImages(
-            files,
-            `categories/${createdCategory.id}`,
+        try {
+          // Update category
+          const updatedCategory = await this.updateCategoryWithTransaction(
+            id,
+            updateCategoryDto,
+            transaction,
           );
-          imagesNames.push(...images.fileNames);
+
+          if (files && files.length > 0) {
+            const images = await this.filesService.uploadImages(
+              files,
+              `categories/${updatedCategory.id}`,
+            );
+            imagesNames.push(...images.fileNames);
+          }
+
+          imagesNames = Array.from(new Set(imagesNames));
+
+          if (imagesNames.length > 0) {
+            await transaction.categoryImage.deleteMany({
+              where: { categoryId: updatedCategory.id },
+            });
+
+            await this.createCategoryImagesWithTransaction({
+              categoryId: updatedCategory.id,
+              images: imagesNames,
+              transaction,
+            });
+          }
+
+          return {
+            ...updatedCategory,
+            images: imagesNames,
+          };
+        } catch (error) {
+          this.logger.error(`Transaction failed: ${error}`);
+          throw error;
         }
-
-        imagesNames = Array.from(new Set(imagesNames));
-
-        if (imagesNames.length > 0) {
-          await transaction.categoryImage.deleteMany({
-            where: { categoryId: id },
-          });
-          await Promise.all(
-            imagesNames.map((image) => {
-              return transaction.categoryImage.create({
-                data: {
-                  categoryId: createdCategory.id,
-                  image: image,
-                },
-              });
-            }),
-          );
-        }
-
-        return {
-          ...createdCategory,
-          images: imagesNames,
-        };
-      } catch (error) {
-        this.logger.error(`Transaction failed: ${error}`);
-        throw error;
-      }
-    });
+      },
+    );
   }
 
+  // -- Remove Category --- //
   async remove(id: string): Promise<Category> {
-    const category = await this.findOne(id);
-    const deleteCategory = await this.prisma.category.delete({
+    const category = await this.findOne({ where: { id } });
+
+    const deletedCategory = await this.prisma.category.delete({
       where: { id },
     });
-    await this.cloudinary.deleteImagesByFolder(`categories/${category.id}`);
 
-    return deleteCategory;
+    await this.cloudinary.deleteImagesByFolder(`products/${category.id}`);
+
+    return deletedCategory;
   }
 
-  private readonly ERROR_MESSAGES = {
-    CATEGORY_EXISTS: 'Category with this name already exists',
-    CATEGORY_NOT_FOUND: 'Category not found',
-    CATEGORY_DELETED: 'Category deleted successfully',
-  } as const;
+  async createCategoryWithTransaction(
+    dto: CreateCategoryDto,
+    transaction: Prisma.TransactionClient,
+  ): Promise<Category> {
+    return transaction.category.create({
+      data: {
+        description: dto.description,
+        isActive: dto.isActive,
+        name: dto.name,
+        slug: dto.slug,
+      },
+    });
+  }
+
+  async updateCategoryWithTransaction(
+    categoryId: string,
+    dto: UpdateCategoryDto,
+    transaction: Prisma.TransactionClient,
+  ): Promise<Category> {
+    return transaction.category.update({
+      where: { id: categoryId },
+      data: {
+        description: dto.description,
+        isActive: dto.isActive,
+        name: dto.name,
+        slug: dto.slug,
+      },
+    });
+  }
+
+  async createCategoryImagesWithTransaction({
+    categoryId,
+    images,
+    transaction,
+  }: {
+    categoryId: string;
+    images: string[];
+    transaction: Prisma.TransactionClient;
+  }): Promise<void> {
+    await Promise.all(
+      images.map((image) =>
+        transaction.categoryImage.create({
+          data: {
+            categoryId: categoryId,
+            image: image,
+          },
+        }),
+      ),
+    );
+  }
 }
