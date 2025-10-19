@@ -15,18 +15,18 @@ datasource db {
 }
 
 model Product {
-  id          String           @id @default(uuid())
-  name        String           @unique
-  slug        String           @unique
-  origin      String
-  description String
-  brand       String
-  features    ProductFeature[]
-  isActive    Boolean
-  categoryId  String
-  category    Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  images      ProductImage[]
-  variants    ProductVariant[]
+  id              String           @id @default(uuid())
+  name            String           @unique
+  slug            String           @unique
+  origin          String
+  description     String
+  brand           String
+  isActive        Boolean
+  categoryId      String
+  category        Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  images          ProductImage[]
+  productVariants ProductVariant[]
+  productFeatures ProductFeature[]
 
   @@index([categoryId, brand])
 }
@@ -47,14 +47,14 @@ model ProductImage {
 }
 
 model ProductVariant {
-  id                      String                   @id @default(uuid())
-  sku                     String                   @unique
-  availableQuantity       Int
-  price                   Decimal                  @db.Decimal(10, 2)
-  color                   String
-  productId               String
-  product                 Product                  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  productVariantDimension ProductVariantDimension?
+  id                       String                   @id @default(uuid())
+  sku                      String                   @unique
+  availableQuantity        Int
+  price                    Decimal                  @db.Decimal(10, 2)
+  color                    String
+  productId                String
+  product                  Product                  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productVariantDimensions ProductVariantDimension?
 }
 
 model ProductVariantDimension {

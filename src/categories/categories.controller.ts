@@ -13,11 +13,12 @@ import {
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { PaginationDto } from 'src/common/dto/pagination.dto';
 
 import { Public } from 'src/auth/decorators/public.decorator';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { fileFilter } from 'src/files/helpers/file-filter';
+
+import { CategoryOptionsQueryDto } from './dto/index';
 
 @Controller('categories')
 export class CategoriesController {
@@ -39,14 +40,22 @@ export class CategoriesController {
 
   @Public()
   @Get()
-  findAll(@Query() paginationDto: PaginationDto) {
-    return this.categoriesService.findAll(paginationDto);
+  findAll(@Query() CategoryOptionsQueryDto: CategoryOptionsQueryDto) {
+    return this.categoriesService.findAll(CategoryOptionsQueryDto);
   }
 
   @Public()
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.categoriesService.findOne({ where: { id } });
+  findOne(
+    @Query() categoryOptionsQueryDto: CategoryOptionsQueryDto,
+    @Param('id') id: string,
+  ) {
+    return this.categoriesService.findOne({
+      where: { id },
+      withImages: categoryOptionsQueryDto.withImages,
+      withProducts: categoryOptionsQueryDto.withProducts,
+      withProductCount: categoryOptionsQueryDto.withProductCount,
+    });
   }
 
   @Public()

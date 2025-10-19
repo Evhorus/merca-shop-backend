@@ -9,11 +9,18 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { FilesService } from 'src/files/files.service';
-import { Color, Prisma, Product, ProductImage } from 'generated/prisma';
+import { Color, Prisma } from 'generated/prisma';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
 import { PaginatedResponse } from 'src/common/interfaces/paginated-response';
 import { CategoriesService } from 'src/categories/categories.service';
-import { ProductWithAllRelations } from './interfaces/product-response.interface';
+import {
+  Product,
+  ProductFeature,
+  ProductVariant,
+} from './interfaces/product.interface';
+import { ProductMapper } from './mappers/product.mapper';
+import { ProductVariantMapper } from './mappers/product-variant.mapper';
+import { ProductFeatureMapper } from './mappers/product-feature.mapper';
 
 @Injectable()
 export class ProductsService {
@@ -29,7 +36,7 @@ export class ProductsService {
   async create(
     createProductDto: CreateProductDto,
     files: Array<Express.Multer.File>,
-  ): Promise<ProductWithAllRelations> {
+  ): Promise<Product> {
     this.validateCreateProductDto(createProductDto, files);
 
     await this.ensureProductDoesNotExist(createProductDto.name);
@@ -37,7 +44,7 @@ export class ProductsService {
     await this.ensureCategoryExists(createProductDto.categoryId);
 
     return await this.prisma.$transaction(
-      async (transaction): Promise<ProductWithAllRelations> => {
+      async (transaction): Promise<Product> => {
         try {
           // Create product
           const createdProduct = await this.createProduct(
@@ -46,7 +53,7 @@ export class ProductsService {
           );
 
           // Create features
-          const ProductFeatures = await this.createProductFeatures({
+          const productFeatures = await this.createProductFeatures({
             features: createProductDto.features,
             productId: createdProduct.id,
             transaction,
@@ -66,7 +73,7 @@ export class ProductsService {
           );
 
           // Create Images
-          const productImages = await this.createProductImages({
+          await this.createProductImages({
             imageNames: uploadedImages.fileNames,
             productId: createdProduct.id,
             transaction,
@@ -74,9 +81,9 @@ export class ProductsService {
 
           return {
             ...createdProduct,
-            images: productImages,
-            features: ProductFeatures,
+            images: uploadedImages.fileNames,
             variants: productVariants,
+            features: productFeatures,
           };
         } catch (error) {
           this.logger.error(`Transaction failed: ${error}`);
@@ -88,7 +95,7 @@ export class ProductsService {
 
   async findAll(
     paginationDto: PaginationDto,
-  ): Promise<PaginatedResponse<Product & { images: string[] }>> {
+  ): Promise<PaginatedResponse<Product>> {
     const { limit = 10, offset = 0, q } = paginationDto;
 
     const where: Prisma.ProductWhereInput = {
@@ -109,54 +116,33 @@ export class ProductsService {
     return {
       count: totalProducts,
       pages: Math.ceil(totalProducts / limit),
-      data: products.map((product) => ({
-        ...product,
-        images: product.images.map((img) => img.image),
-      })),
+      data: ProductMapper.toPresentationArray(products),
     };
   }
 
   async findOne({
     where,
-    withImages,
-    withFeatures,
-    withVariants,
   }: {
     where: Prisma.ProductWhereUniqueInput;
-    withImages?: boolean;
-    withFeatures?: boolean;
-    withVariants?: boolean;
-  }): Promise<ProductWithAllRelations> {
-    const include: Prisma.ProductInclude = {
-      ...(withImages && { images: true }),
-      ...(withFeatures && {
-        features: { select: { name: true, value: true } },
-      }),
-      ...(withVariants && {
-        variants: {
-          include: {
-            productVariantDimension: {
-              select: { id: true, productVariantId: true },
-            },
-          },
-          omit: { id: true },
-        },
-      }),
-    };
-
+  }): Promise<Product> {
     const product = await this.prisma.product.findUnique({
       where,
-      include,
+      include: {
+        images: true,
+        productFeatures: true,
+        productVariants: {
+          include: {
+            productVariantDimensions: true,
+          },
+        },
+      },
     });
 
     if (!product) {
       throw new NotFoundException(this.ERROR_MESSAGES.PRODUCT_NOT_FOUND);
     }
 
-    return {
-      ...product,
-      // images: withImages ? product.images.map((img) => img.image) : [],
-    };
+    return ProductMapper.toPresentationFull(product);
   }
 
   async update(
@@ -253,7 +239,7 @@ export class ProductsService {
   private validateCreateProductDto(
     createProductDto: CreateProductDto,
     files: Array<Express.Multer.File>,
-  ) {
+  ): void {
     if (!createProductDto.variants || createProductDto.variants.length === 0) {
       throw new BadRequestException('At least one product variant is required');
     }
@@ -368,8 +354,8 @@ export class ProductsService {
     features: CreateProductDto['features'];
     productId: string;
     transaction: Prisma.TransactionClient;
-  }) {
-    return await Promise.all(
+  }): Promise<ProductFeature[]> {
+    const createdFeatures = await Promise.all(
       features.map((feature) =>
         transaction.productFeature.create({
           data: {
@@ -379,6 +365,8 @@ export class ProductsService {
         }),
       ),
     );
+
+    return ProductFeatureMapper.toPresentationArray(createdFeatures);
   }
 
   private async createProductVariants({
@@ -389,48 +377,40 @@ export class ProductsService {
     productId: string;
     transaction: Prisma.TransactionClient;
     variants: CreateProductDto['variants'];
-  }): Promise<
-    Prisma.ProductVariantGetPayload<{
-      include: { productVariantDimension: true };
-    }>[]
-  > {
-    return await Promise.all(
-      variants.map(
-        async (
-          variant,
-        ): Promise<
-          Prisma.ProductVariantGetPayload<{
-            include: { productVariantDimension: true };
-          }>
-        > => {
-          await this.ensureProductVariantDoesNotExist(variant.sku);
-          const { colorName } = await this.getOrCreateColor(
-            transaction,
-            variant.color,
-          );
+  }): Promise<ProductVariant[]> {
+    const createdProductVariants = await Promise.all(
+      variants.map(async (variant) => {
+        await this.ensureProductVariantDoesNotExist(variant.sku);
+        const { colorName } = await this.getOrCreateColor(
+          transaction,
+          variant.color,
+        );
 
-          const productVariant = await transaction.productVariant.create({
-            data: {
-              availableQuantity: variant.availableQuantity,
-              color: colorName,
-              price: this.normalizeNumberString(variant.price),
-              sku: variant.sku,
-              productId,
-            },
-            include: { productVariantDimension: true },
-          });
+        const productVariant = await transaction.productVariant.create({
+          data: {
+            availableQuantity: variant.availableQuantity,
+            color: colorName,
+            price: this.normalizeNumberString(variant.price),
+            sku: variant.sku,
+            productId,
+          },
+          include: {
+            productVariantDimensions: true,
+          },
+        });
 
-          await transaction.productVariantDimension.create({
-            data: {
-              ...variant.dimensions,
-              productVariantId: productVariant.id,
-            },
-          });
+        await transaction.productVariantDimension.create({
+          data: {
+            ...variant.dimensions,
+            productVariantId: productVariant.id,
+          },
+        });
 
-          return productVariant;
-        },
-      ),
+        return productVariant;
+      }),
     );
+
+    return ProductVariantMapper.toPresentationArray(createdProductVariants);
   }
 
   private async createProductImages({
@@ -441,8 +421,8 @@ export class ProductsService {
     imageNames: string[];
     productId: string;
     transaction: Prisma.TransactionClient;
-  }): Promise<ProductImage[]> {
-    return await Promise.all(
+  }): Promise<void> {
+    await Promise.all(
       imageNames.map((image) =>
         transaction.productImage.create({
           data: {

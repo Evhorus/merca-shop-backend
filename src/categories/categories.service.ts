@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Category, Prisma } from 'generated/prisma';
+import { Category, CategoryImage, Prisma } from 'generated/prisma';
 
 import { PaginationDto } from 'src/common/dto';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -9,7 +9,7 @@ import { PaginatedResponse } from 'src/common/interfaces/paginated-response';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto';
 
 import { ResourceNotFoundException } from 'src/common/exceptions/resource.exceptions';
-import { CategoryWithImages } from './interfaces';
+import { CategoryWithAllRelations, CategoryWithImages } from './interfaces';
 
 @Injectable()
 export class CategoriesService {
@@ -40,7 +40,7 @@ export class CategoriesService {
             `categories/${createdCategory.id}`,
           );
 
-          await this.createCategoryImagesWithTransaction({
+          const productImages = await this.createCategoryImagesWithTransaction({
             categoryId: createdCategory.id,
             images: images.fileNames,
             transaction,
@@ -48,7 +48,7 @@ export class CategoriesService {
 
           return {
             ...createdCategory,
-            images: images.fileNames,
+            images: productImages,
           };
         } catch (error) {
           this.logger.error(`Transaction failed: ${error}`);
@@ -72,7 +72,7 @@ export class CategoriesService {
       this.prisma.category.findMany({
         take: limit,
         skip: offset,
-        include: { images: true },
+        include: { images: true, _count: { select: { products: true } } },
         orderBy: { id: 'asc' },
         where,
       }),
@@ -84,7 +84,6 @@ export class CategoriesService {
       pages: Math.ceil(totalCategories / limit),
       data: categories.map((category) => ({
         ...category,
-        images: category.images.map((img) => img.image),
       })),
     };
   }
@@ -93,12 +92,21 @@ export class CategoriesService {
   async findOne({
     where,
     withImages,
+    withProducts,
+    withProductCount,
   }: {
     where: Prisma.CategoryWhereUniqueInput;
     withImages?: boolean;
-  }): Promise<CategoryWithImages> {
+    withProducts?: boolean;
+    withProductCount?: boolean;
+  }): Promise<CategoryWithAllRelations> {
     const include: Prisma.CategoryInclude = {
-      ...(withImages && { images: true }),
+      ...(withImages && { images: { select: { image: true } } }),
+      ...(withProducts && {
+        products: true,
+        _count: { select: { products: true } },
+      }),
+      ...(withProductCount && { _count: { select: { products: true } } }),
     };
 
     const category = await this.prisma.category.findUnique({
@@ -112,7 +120,6 @@ export class CategoriesService {
 
     return {
       ...category,
-      images: withImages ? category.images.map((img) => img.image) : [],
     };
   }
 
@@ -144,12 +151,14 @@ export class CategoriesService {
 
           imagesNames = Array.from(new Set(imagesNames));
 
+          let createdImages: CategoryImage[] = [];
+
           if (imagesNames.length > 0) {
             await transaction.categoryImage.deleteMany({
               where: { categoryId: updatedCategory.id },
             });
 
-            await this.createCategoryImagesWithTransaction({
+            createdImages = await this.createCategoryImagesWithTransaction({
               categoryId: updatedCategory.id,
               images: imagesNames,
               transaction,
@@ -158,7 +167,7 @@ export class CategoriesService {
 
           return {
             ...updatedCategory,
-            images: imagesNames,
+            images: createdImages,
           };
         } catch (error) {
           this.logger.error(`Transaction failed: ${error}`);
@@ -219,8 +228,8 @@ export class CategoriesService {
     categoryId: string;
     images: string[];
     transaction: Prisma.TransactionClient;
-  }): Promise<void> {
-    await Promise.all(
+  }): Promise<CategoryImage[]> {
+    return await Promise.all(
       images.map((image) =>
         transaction.categoryImage.create({
           data: {

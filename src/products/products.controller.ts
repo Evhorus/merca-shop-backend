@@ -45,9 +45,6 @@ export class ProductsController {
   findOne(@Param('id') id: string) {
     return this.productsService.findOne({
       where: { id },
-      // withImages: true,
-      // withFeatures: true,
-      // withVariants: true,
     });
   }
 
