@@ -38,6 +38,7 @@ export class ProductsController {
     return this.productsService.create(createProductDto, files);
   }
 
+  @Public()
   @Get()
   findAll(@Query() paginationDto: PaginationDto) {
     return this.productsService.findAll(paginationDto);

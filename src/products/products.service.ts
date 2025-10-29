@@ -1,4 +1,9 @@
-import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from 'generated/prisma';
 
 import { PrismaService } from 'src/prisma';
@@ -16,6 +21,7 @@ import {
 import { CreateProductDto, UpdateProductDto } from './dto';
 import { Product, ProductFeature, ProductVariant } from './entities';
 
+@Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
 
