@@ -6,8 +6,9 @@ import {
   UploadedFiles,
   Param,
 } from '@nestjs/common';
-import { FilesService } from './files.service';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+
+import { FilesService } from './files.service';
 import { fileFilter } from './helpers/file-filter';
 
 @Controller('files')

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { CloudinaryService } from 'src/cloudinary';
 
 @Injectable()
 export class FilesService {

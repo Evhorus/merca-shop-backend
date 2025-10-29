@@ -1,14 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Category, CategoryImage, Prisma } from 'generated/prisma';
 
-import { PaginationDto } from 'src/common/dto';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { FilesService } from 'src/files/files.service';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
-import { PaginatedResponse } from 'src/common/interfaces/paginated-response';
-import { CreateCategoryDto, UpdateCategoryDto } from './dto';
+import {
+  PaginationDto,
+  PaginatedResponse,
+  ResourceNotFoundException,
+} from 'src/common';
+import { PrismaService } from 'src/prisma';
+import { FilesService } from 'src/files';
+import { CloudinaryService } from 'src/cloudinary';
 
-import { ResourceNotFoundException } from 'src/common/exceptions/resource.exceptions';
+import { CreateCategoryDto, UpdateCategoryDto } from './dto';
 import { CategoryWithAllRelations, CategoryWithImages } from './interfaces';
 
 @Injectable()

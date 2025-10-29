@@ -1,28 +1,21 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import { CreateProductDto, ProductVariantDto } from './dto/create-product.dto';
-import { UpdateProductDto } from './dto/update-product.dto';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
-import { FilesService } from 'src/files/files.service';
-import { Color, Prisma } from 'generated/prisma';
-import { PaginationDto } from 'src/common/dto/pagination.dto';
-import { PaginatedResponse } from 'src/common/interfaces/paginated-response';
-import { CategoriesService } from 'src/categories/categories.service';
-import {
-  Product,
-  ProductFeature,
-  ProductVariant,
-} from './interfaces/product.interface';
-import { ProductMapper } from './mappers/product.mapper';
-import { ProductVariantMapper } from './mappers/product-variant.mapper';
-import { ProductFeatureMapper } from './mappers/product-feature.mapper';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from 'generated/prisma';
 
-@Injectable()
+import { PrismaService } from 'src/prisma';
+import { CloudinaryService } from 'src/cloudinary';
+import { FilesService } from 'src/files';
+import { PaginationDto, PaginatedResponse } from 'src/common';
+import { CategoriesService } from 'src/categories/categories.service';
+import { ColorsService } from 'src/colors';
+
+import {
+  ProductMapper,
+  ProductFeatureMapper,
+  ProductVariantMapper,
+} from './mappers';
+import { CreateProductDto, UpdateProductDto } from './dto';
+import { Product, ProductFeature, ProductVariant } from './entities';
+
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
 
@@ -31,6 +24,7 @@ export class ProductsService {
     private readonly filesService: FilesService,
     private readonly cloudinary: CloudinaryService,
     private readonly categoriesService: CategoriesService,
+    private readonly colorsService: ColorsService,
   ) {}
 
   async create(
@@ -60,11 +54,12 @@ export class ProductsService {
           });
 
           // Create variants
-          const productVariants = await this.createProductVariants({
-            productId: createdProduct.id,
-            transaction: transaction,
-            variants: createProductDto.variants,
-          });
+          const productVariants =
+            await this.createProductVariantsWithTransaction({
+              productId: createdProduct.id,
+              transaction: transaction,
+              variants: createProductDto.variants,
+            });
 
           // Upload Images
           const uploadedImages = await this.filesService.uploadImages(
@@ -182,7 +177,7 @@ export class ProductsService {
             where: { productId: updatedProduct.id },
           });
 
-          await this.createProductVariants({
+          await this.createProductVariantsWithTransaction({
             productId: updatedProduct.id,
             transaction: transaction,
             variants: updateProductDto.variants,
@@ -320,32 +315,6 @@ export class ProductsService {
     });
   }
 
-  private async getOrCreateColor(
-    transaction: Prisma.TransactionClient,
-    color: ProductVariantDto['color'],
-  ): Promise<Color> {
-    const { colorCode, colorName } = color;
-
-    const colorExists = await transaction.color.findUnique({
-      where: {
-        colorCode,
-        colorName,
-      },
-    });
-
-    if (!colorExists) {
-      const color = await transaction.color.create({
-        data: {
-          colorCode,
-          colorName,
-        },
-      });
-
-      return color;
-    }
-    return colorExists;
-  }
-
   private async createProductFeatures({
     features,
     productId,
@@ -369,7 +338,7 @@ export class ProductsService {
     return ProductFeatureMapper.toPresentationArray(createdFeatures);
   }
 
-  private async createProductVariants({
+  private async createProductVariantsWithTransaction({
     productId,
     transaction,
     variants,
@@ -381,10 +350,10 @@ export class ProductsService {
     const createdProductVariants = await Promise.all(
       variants.map(async (variant) => {
         await this.ensureProductVariantDoesNotExist(variant.sku);
-        const { colorName } = await this.getOrCreateColor(
-          transaction,
-          variant.color,
-        );
+
+        const { colorName } = await this.colorsService.findOne({
+          colorName: variant.color.colorName,
+        });
 
         const productVariant = await transaction.productVariant.create({
           data: {

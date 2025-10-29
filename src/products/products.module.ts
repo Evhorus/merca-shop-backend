@@ -1,13 +1,22 @@
 import { Module } from '@nestjs/common';
-import { ProductsService } from './products.service';
+
+import { PrismaModule } from 'src/prisma';
+import { FilesModule } from 'src/files';
+import { CloudinaryModule } from 'src/cloudinary';
+import { CategoriesModule } from 'src/categories';
+
 import { ProductsController } from './products.controller';
-import { PrismaModule } from 'src/prisma/prisma.module';
-import { FilesModule } from 'src/files/files.module';
-import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
-import { CategoriesModule } from 'src/categories/categories.module';
+import { ProductsService } from './products.service';
+import { ColorsModule } from 'src/colors/colors.module';
 
 @Module({
-  imports: [PrismaModule, FilesModule, CloudinaryModule, CategoriesModule],
+  imports: [
+    PrismaModule,
+    FilesModule,
+    CloudinaryModule,
+    CategoriesModule,
+    ColorsModule,
+  ],
   controllers: [ProductsController],
   providers: [ProductsService],
 })

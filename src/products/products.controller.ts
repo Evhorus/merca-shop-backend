@@ -10,13 +10,15 @@ import {
   UploadedFiles,
   Query,
 } from '@nestjs/common';
-import { ProductsService } from './products.service';
+import { FilesInterceptor } from '@nestjs/platform-express';
+
+import { Public } from 'src/auth';
+import { fileFilter } from 'src/files';
+import { PaginationDto } from 'src/common';
+
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { Public } from 'src/auth/decorators/public.decorator';
-import { FilesInterceptor } from '@nestjs/platform-express';
-import { fileFilter } from 'src/files/helpers/file-filter';
-import { PaginationDto } from 'src/common/dto/pagination.dto';
+import { ProductsService } from './products.service';
 
 @Public()
 @Controller('products')

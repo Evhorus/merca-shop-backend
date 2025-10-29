@@ -10,15 +10,17 @@ import {
   UseInterceptors,
   UploadedFiles,
 } from '@nestjs/common';
-import { CategoriesService } from './categories.service';
-import { CreateCategoryDto } from './dto/create-category.dto';
-import { UpdateCategoryDto } from './dto/update-category.dto';
-
-import { Public } from 'src/auth/decorators/public.decorator';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { fileFilter } from 'src/files/helpers/file-filter';
 
-import { CategoryOptionsQueryDto } from './dto/index';
+import { Public } from 'src/auth';
+import { fileFilter } from 'src/files';
+
+import {
+  CategoryOptionsQueryDto,
+  CreateCategoryDto,
+  UpdateCategoryDto,
+} from './dto';
+import { CategoriesService } from './categories.service';
 
 @Controller('categories')
 export class CategoriesController {
