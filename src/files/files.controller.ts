@@ -10,7 +10,9 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 
 import { FilesService } from './files.service';
 import { fileFilter } from './helpers/file-filter';
+import { Public } from 'src/auth';
 
+@Public()
 @Controller('files')
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}

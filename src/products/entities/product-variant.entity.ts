@@ -3,7 +3,7 @@ import { ProductVariantDimension } from './product-dimension.entity';
 export class ProductVariant {
   availableQuantity: number;
   color: string;
-  dimensions: ProductVariantDimension;
+  dimensions?: ProductVariantDimension;
   price: string;
   sku: string;
 }

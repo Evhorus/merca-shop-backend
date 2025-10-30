@@ -9,28 +9,33 @@ export class ProductVariantMapper {
   static toPresentation(
     prismaProductVariantWithDimensions: PrismaProductVariantWithDimensions,
   ): ProductVariant {
-    if (!prismaProductVariantWithDimensions.productVariantDimensions) {
-      throw new Error(
-        'Product variant dimensions are required for transformation.',
-      );
-    }
-
-    const { depth, diameter, height, length, unit, width } =
-      prismaProductVariantWithDimensions.productVariantDimensions;
-
     return {
       sku: prismaProductVariantWithDimensions.sku,
       price: prismaProductVariantWithDimensions.price.toString(),
       color: prismaProductVariantWithDimensions.color,
       availableQuantity: prismaProductVariantWithDimensions.availableQuantity,
-      dimensions: {
-        ...(depth && { depth: depth?.toString() }),
-        ...(diameter && { diameter: depth?.toString() }),
-        height: height.toString(),
-        length: length?.toString(),
-        width: width?.toString(),
-        unit: unit,
-      },
+      ...(prismaProductVariantWithDimensions.productVariantDimensions && {
+        dimensions: {
+          ...(prismaProductVariantWithDimensions.productVariantDimensions
+            .depth && {
+            depth:
+              prismaProductVariantWithDimensions.productVariantDimensions.depth?.toString(),
+          }),
+          ...(prismaProductVariantWithDimensions.productVariantDimensions
+            .diameter && {
+            diameter:
+              prismaProductVariantWithDimensions.productVariantDimensions.depth?.toString(),
+          }),
+          height:
+            prismaProductVariantWithDimensions.productVariantDimensions.height.toString(),
+          length:
+            prismaProductVariantWithDimensions.productVariantDimensions.length?.toString(),
+          width:
+            prismaProductVariantWithDimensions.productVariantDimensions.width?.toString(),
+          unit: prismaProductVariantWithDimensions.productVariantDimensions
+            .unit,
+        },
+      }),
     };
   }
 

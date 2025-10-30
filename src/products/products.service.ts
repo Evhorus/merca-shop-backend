@@ -13,13 +13,9 @@ import { PaginationDto, PaginatedResponse } from 'src/common';
 import { CategoriesService } from 'src/categories/categories.service';
 import { ColorsService } from 'src/colors';
 
-import {
-  ProductMapper,
-  ProductFeatureMapper,
-  ProductVariantMapper,
-} from './mappers';
+import { ProductFeatureMapper, ProductMapper } from './mappers';
 import { CreateProductDto, UpdateProductDto } from './dto';
-import { Product, ProductFeature, ProductVariant } from './entities';
+import { Product, ProductFeature } from './entities';
 
 @Injectable()
 export class ProductsService {
@@ -36,62 +32,55 @@ export class ProductsService {
   async create(
     createProductDto: CreateProductDto,
     files: Array<Express.Multer.File>,
-  ): Promise<Product> {
-    this.validateCreateProductDto(createProductDto, files);
-
+  ) {
     await this.ensureProductDoesNotExist(createProductDto.name);
 
     await this.ensureCategoryExists(createProductDto.categoryId);
 
-    return await this.prisma.$transaction(
-      async (transaction): Promise<Product> => {
-        try {
-          // Create product
-          const createdProduct = await this.createProduct(
-            transaction,
-            createProductDto,
-          );
+    return await this.prisma.$transaction(async (transaction) => {
+      try {
+        // Create product
+        const createdProduct = await this.createProduct(
+          transaction,
+          createProductDto,
+        );
 
-          // Create features
-          const productFeatures = await this.createProductFeatures({
+        if (createProductDto.features) {
+          await this.createProductFeatures({
             features: createProductDto.features,
             productId: createdProduct.id,
             transaction,
           });
+        }
 
-          // Create variants
-          const productVariants =
-            await this.createProductVariantsWithTransaction({
+        if (createProductDto.dimensions) {
+          await this.prisma.productDimensions.create({
+            data: {
+              ...createProductDto.dimensions,
               productId: createdProduct.id,
-              transaction: transaction,
-              variants: createProductDto.variants,
-            });
+            },
+          });
+        }
+        const { fileNames } = await this.filesService.uploadImages(
+          files,
+          `products/${createdProduct.id}`,
+        );
 
-          // Upload Images
-          const uploadedImages = await this.filesService.uploadImages(
-            files,
-            `products/${createdProduct.id}`,
-          );
-
-          // Create Images
+        if (files && files.length > 0) {
           await this.createProductImages({
-            imageNames: uploadedImages.fileNames,
+            imageNames: fileNames,
             productId: createdProduct.id,
             transaction,
           });
-
-          return {
-            ...createdProduct,
-            images: uploadedImages.fileNames,
-            variants: productVariants,
-            features: productFeatures,
-          };
-        } catch (error) {
-          this.logger.error(`Transaction failed: ${error}`);
-          throw error;
         }
-      },
-    );
+        return {
+          ...createdProduct,
+        };
+      } catch (error) {
+        this.logger.error(`Transaction failed: ${error}`);
+        throw error;
+      }
+    });
   }
 
   async findAll(
@@ -107,7 +96,12 @@ export class ProductsService {
       this.prisma.product.findMany({
         take: limit,
         skip: offset,
-        include: { images: true },
+        include: {
+          images: true,
+          productFeatures: true,
+          productVariants: { include: { productVariantDimensions: true } },
+          productDimensions: true,
+        },
         orderBy: { id: 'asc' },
         where,
       }),
@@ -136,6 +130,7 @@ export class ProductsService {
             productVariantDimensions: true,
           },
         },
+        productDimensions: true,
       },
     });
 
@@ -163,30 +158,20 @@ export class ProductsService {
           transaction,
         });
 
-        if (
-          updateProductDto.features &&
-          updateProductDto.features?.length > 0
-        ) {
-          await transaction.productFeature.deleteMany({
+        if (updateProductDto.dimensions) {
+          await transaction.productDimensions.deleteMany({
             where: { productId: updatedProduct.id },
           });
 
-          await this.createProductFeatures({
-            features: updateProductDto.features,
-            productId: updatedProduct.id,
-            transaction,
+          await transaction.productDimensions.create({
+            data: {
+              ...updateProductDto.dimensions,
+              productId: updatedProduct.id,
+            },
           });
-        }
-
-        if (updateProductDto.variants && updateProductDto.variants.length > 0) {
-          await transaction.productVariant.deleteMany({
+        } else {
+          await transaction.productDimensions.deleteMany({
             where: { productId: updatedProduct.id },
-          });
-
-          await this.createProductVariantsWithTransaction({
-            productId: updatedProduct.id,
-            transaction: transaction,
-            variants: updateProductDto.variants,
           });
         }
 
@@ -215,9 +200,23 @@ export class ProductsService {
           });
         }
 
+        if (
+          updateProductDto.features &&
+          updateProductDto.features?.length > 0
+        ) {
+          await transaction.productFeature.deleteMany({
+            where: { productId: updatedProduct.id },
+          });
+
+          await this.createProductFeatures({
+            features: updateProductDto.features,
+            productId: updatedProduct.id,
+            transaction,
+          });
+        }
+
         return {
           ...updatedProduct,
-          images: imagesNames,
         };
       } catch (error) {
         this.logger.error(`Transaction failed: ${error}`);
@@ -237,26 +236,6 @@ export class ProductsService {
     return deleteProduct;
   }
 
-  private validateCreateProductDto(
-    createProductDto: CreateProductDto,
-    files: Array<Express.Multer.File>,
-  ): void {
-    if (!createProductDto.variants || createProductDto.variants.length === 0) {
-      throw new BadRequestException('At least one product variant is required');
-    }
-
-    if (!files || files.length === 0) {
-      throw new BadRequestException('At least one product image is required');
-    }
-
-    // Validar SKUs únicos dentro del DTO
-    const skus = createProductDto.variants.map((v) => v.sku);
-    const uniqueSkus = new Set(skus);
-    if (skus.length !== uniqueSkus.size) {
-      throw new BadRequestException('Duplicate SKUs in variants');
-    }
-  }
-
   private async ensureProductDoesNotExist(name: string) {
     const productExist = await this.prisma.product.findUnique({
       where: { name },
@@ -264,16 +243,6 @@ export class ProductsService {
 
     if (productExist) {
       throw new BadRequestException(this.ERROR_MESSAGES.PRODUCT_EXISTS);
-    }
-  }
-
-  private async ensureProductVariantDoesNotExist(sku: string) {
-    const productVariantExist = await this.prisma.productVariant.findUnique({
-      where: { sku },
-    });
-
-    if (productVariantExist) {
-      throw new BadRequestException(this.ERROR_MESSAGES.PRODUCT_VARIANT_EXISTS);
     }
   }
 
@@ -294,6 +263,8 @@ export class ProductsService {
         name: dto.name,
         origin: dto.origin,
         slug: dto.slug,
+        price: dto.price,
+        sku: dto.sku,
       },
     });
   }
@@ -317,6 +288,8 @@ export class ProductsService {
         name: dto.name,
         origin: dto.origin,
         slug: dto.slug,
+        price: dto.price,
+        sku: dto.sku,
       },
     });
   }
@@ -330,6 +303,12 @@ export class ProductsService {
     productId: string;
     transaction: Prisma.TransactionClient;
   }): Promise<ProductFeature[]> {
+    if (!features) {
+      throw new BadRequestException(
+        'Features no present on create (createProductFeatures)',
+      );
+    }
+
     const createdFeatures = await Promise.all(
       features.map((feature) =>
         transaction.productFeature.create({
@@ -342,50 +321,6 @@ export class ProductsService {
     );
 
     return ProductFeatureMapper.toPresentationArray(createdFeatures);
-  }
-
-  private async createProductVariantsWithTransaction({
-    productId,
-    transaction,
-    variants,
-  }: {
-    productId: string;
-    transaction: Prisma.TransactionClient;
-    variants: CreateProductDto['variants'];
-  }): Promise<ProductVariant[]> {
-    const createdProductVariants = await Promise.all(
-      variants.map(async (variant) => {
-        await this.ensureProductVariantDoesNotExist(variant.sku);
-
-        const { colorName } = await this.colorsService.findOne({
-          colorName: variant.color.colorName,
-        });
-
-        const productVariant = await transaction.productVariant.create({
-          data: {
-            availableQuantity: variant.availableQuantity,
-            color: colorName,
-            price: this.normalizeNumberString(variant.price),
-            sku: variant.sku,
-            productId,
-          },
-          include: {
-            productVariantDimensions: true,
-          },
-        });
-
-        await transaction.productVariantDimension.create({
-          data: {
-            ...variant.dimensions,
-            productVariantId: productVariant.id,
-          },
-        });
-
-        return productVariant;
-      }),
-    );
-
-    return ProductVariantMapper.toPresentationArray(createdProductVariants);
   }
 
   private async createProductImages({
@@ -423,3 +358,59 @@ export class ProductsService {
     COLOR_NOT_FOUND: 'Color not found',
   } as const;
 }
+
+// private async ensureProductVariantDoesNotExist(sku: string) {
+//   const productVariantExist = await this.prisma.productVariant.findUnique({
+//     where: { sku },
+//   });
+
+//   if (productVariantExist) {
+//     throw new BadRequestException(this.ERROR_MESSAGES.PRODUCT_VARIANT_EXISTS);
+//   }
+// }
+
+// private async createProductVariantsWithTransaction({
+//   productId,
+//   transaction,
+//   variants,
+// }: {
+//   productId: string;
+//   transaction: Prisma.TransactionClient;
+//   variants: CreateProductDto['variants'];
+// }): Promise<ProductVariant[]> {
+//   const createdProductVariants = await Promise.all(
+//     variants.map(async (variant) => {
+//       await this.ensureProductVariantDoesNotExist(variant.sku);
+
+//       const { colorName } = await this.colorsService.findOne({
+//         colorName: variant.colorName,
+//       });
+
+//       const productVariant = await transaction.productVariant.create({
+//         data: {
+//           availableQuantity: variant.availableQuantity,
+//           color: colorName,
+//           price: this.normalizeNumberString(variant.price),
+//           sku: variant.sku,
+//           productId,
+//         },
+//         include: {
+//           productVariantDimensions: true,
+//         },
+//       });
+
+//       // if (variant.dimensions) {
+//       //   await transaction.productVariantDimension.create({
+//       //     data: {
+//       //       ...variant.dimensions,
+//       //       productVariantId: productVariant.id,
+//       //     },
+//       //   });
+//       // }
+
+//       return productVariant;
+//     }),
+//   );
+
+//   return ProductVariantMapper.toPresentationArray(createdProductVariants);
+// }

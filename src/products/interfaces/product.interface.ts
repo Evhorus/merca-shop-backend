@@ -20,7 +20,7 @@ export type ProductFeature = {
 export type ProductVariant = {
   availableQuantity: number;
   color: string;
-  dimensions: ProductVariantDimensions;
+  dimensions?: ProductVariantDimensions;
   price: string;
   sku: string;
 };

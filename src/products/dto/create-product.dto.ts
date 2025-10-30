@@ -1,3 +1,4 @@
+import { Optional } from '@nestjs/common';
 import { Transform, Type } from 'class-transformer';
 import {
   IsString,
@@ -7,7 +8,6 @@ import {
   IsUUID,
   ValidateNested,
   IsOptional,
-  ArrayMinSize,
   IsBoolean,
   IsEnum,
   MinLength,
@@ -34,7 +34,7 @@ export enum Unit {
   m = 'm',
 }
 
-export class ProductVariantDimensionsDto {
+export class ProductDimensionsDto {
   @IsString()
   @IsNotEmpty()
   length: string;
@@ -83,14 +83,18 @@ export class ProductVariantDto {
   @IsString()
   price: string;
 
-  // Optionally accept related objects:
-  @ValidateNested()
-  @Type(() => ProductVariantColorDto)
-  color: ProductVariantColorDto;
+  @IsString()
+  colorName: string;
 
-  @ValidateNested()
-  @Type(() => ProductVariantDimensionsDto)
-  dimensions: ProductVariantDimensionsDto;
+  @IsOptional()
+  @Transform(({ value }) =>
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    value ? (Array.isArray(value) ? value : [value]) : [],
+  )
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  images?: string[];
 }
 
 export class CreateProductDto {
@@ -103,6 +107,9 @@ export class CreateProductDto {
   origin: string;
 
   @IsString()
+  @IsNotEmpty()
+  sku: string;
+
   @IsNotEmpty()
   @Matches(/^\S+(?: \S+)*$/, {
     message:
@@ -119,6 +126,9 @@ export class CreateProductDto {
   @MaxLength(50)
   @NotContains(' ', { message: 'Slug should NOT contain whitespace.' })
   slug: string;
+
+  @IsString()
+  price: string;
 
   @IsString()
   @IsNotEmpty()
@@ -138,14 +148,21 @@ export class CreateProductDto {
   )
   @IsArray()
   @IsString({ each: true })
-  images: string[];
+  @IsOptional()
+  images?: string[];
+
+  @ValidateNested()
+  @Type(() => ProductDimensionsDto)
+  @IsOptional()
+  dimensions?: ProductDimensionsDto;
 
   @ValidateNested({ each: true })
   @Type(() => ProductFeatureDto)
-  @ArrayMinSize(1)
-  features: ProductFeatureDto[];
+  @Optional()
+  features?: ProductFeatureDto[];
 
   @ValidateNested({ each: true })
   @Type(() => ProductVariantDto)
+  @Optional()
   variants: ProductVariantDto[];
 }

@@ -1,52 +1,62 @@
 import { Prisma } from 'generated/prisma';
-import { Product } from '../interfaces/product.interface';
+
 import { ProductVariantMapper } from './product-variant.mapper';
 import { ProductFeatureMapper } from './product-feature.mapper';
+import { Product, Unit } from '../entities';
 
-type PrismaProductFull = Prisma.ProductGetPayload<{
+type PrismaProduct = Prisma.ProductGetPayload<{
   include: {
+    images: true;
     productFeatures: true;
-    images: true;
     productVariants: { include: { productVariantDimensions: true } };
-  };
-}>;
-
-type PrismaProductSimple = Prisma.ProductGetPayload<{
-  include: {
-    images: true;
+    productDimensions: true;
   };
 }>;
 
 export class ProductMapper {
-  static toPresentation(prismaProductSimple: PrismaProductSimple): Product {
+  static toPresentation(prismaProduct: PrismaProduct): Product {
     return {
-      brand: prismaProductSimple.brand,
-      categoryId: prismaProductSimple.categoryId,
-      description: prismaProductSimple.description,
-      id: prismaProductSimple.id,
-      isActive: prismaProductSimple.isActive,
-      name: prismaProductSimple.name,
-      origin: prismaProductSimple.origin,
-      slug: prismaProductSimple.slug,
-      images: prismaProductSimple.images.map((img) => img.image),
+      brand: prismaProduct.brand,
+      categoryId: prismaProduct.categoryId,
+      description: prismaProduct.description,
+      id: prismaProduct.id,
+      images: prismaProduct.images.map((img) => img.image),
+      isActive: prismaProduct.isActive,
+      name: prismaProduct.name,
+      origin: prismaProduct.origin,
+      price: prismaProduct.price.toString(),
+      sku: prismaProduct.sku,
+      slug: prismaProduct.slug,
+      ...(prismaProduct.productDimensions && {
+        dimensions: {
+          height: prismaProduct.productDimensions.height.toString(),
+          length: prismaProduct.productDimensions.length.toString(),
+          width: prismaProduct.productDimensions.width.toString(),
+          unit: prismaProduct.productDimensions.unit as Unit,
+        },
+      }),
+      ...(prismaProduct.productFeatures && {
+        features: prismaProduct.productFeatures.map((f) => ({
+          name: f.name,
+          value: f.value,
+        })),
+      }),
     };
   }
 
-  static toPresentationFull(prismaProductFull: PrismaProductFull): Product {
+  static toPresentationFull(prismaProduct: PrismaProduct): Product {
     return {
-      ...this.toPresentation(prismaProductFull),
+      ...this.toPresentation(prismaProduct),
       variants: ProductVariantMapper.toPresentationArray(
-        prismaProductFull.productVariants,
+        prismaProduct.productVariants,
       ),
       features: ProductFeatureMapper.toPresentationArray(
-        prismaProductFull.productFeatures,
+        prismaProduct.productFeatures,
       ),
     };
   }
 
-  static toPresentationArray(
-    prismaProductSimple: PrismaProductSimple[],
-  ): Product[] {
-    return prismaProductSimple.map((p) => this.toPresentation(p));
+  static toPresentationArray(prismaProduct: PrismaProduct[]): Product[] {
+    return prismaProduct.map((p) => this.toPresentation(p));
   }
 }
