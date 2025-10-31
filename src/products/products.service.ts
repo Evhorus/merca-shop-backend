@@ -172,7 +172,7 @@ export class ProductsService {
             data: {
               brand: updateProductDto.brand,
               categoryId: updateProductDto.categoryId,
-              description: updateProductDto.description,
+              description: updateProductDto.description || null,
               isActive: updateProductDto.isActive,
               name: updateProductDto.name,
               origin: updateProductDto.origin,

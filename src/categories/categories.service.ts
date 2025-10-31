@@ -137,13 +137,14 @@ export class CategoriesService {
     updateCategoryDto: UpdateCategoryDto,
     files: Array<Express.Multer.File>,
   ) {
+    console.log(updateCategoryDto.description);
     await this.findOne({ where: { id } });
     await this.validateUniqueProduct(updateCategoryDto, id);
     try {
       const updatedCategory = await this.prisma.category.update({
         where: { id },
         data: {
-          description: updateCategoryDto.description,
+          description: updateCategoryDto.description || null,
           isActive: updateCategoryDto.isActive,
           name: updateCategoryDto.name,
           slug: updateCategoryDto.slug,
