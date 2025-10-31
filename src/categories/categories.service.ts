@@ -53,9 +53,9 @@ export class CategoriesService {
           `categories/${createdCategory.id}`,
         );
 
-        await this.prisma.productImage.createMany({
+        await this.prisma.categoryImage.createMany({
           data: fileNames.map((image) => ({
-            productId: createdCategory.id,
+            categoryId: createdCategory.id,
             image,
           })),
         });
