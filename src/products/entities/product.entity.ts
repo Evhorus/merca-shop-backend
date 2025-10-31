@@ -18,7 +18,6 @@ export enum Unit {
 export class Product {
   brand: string;
   categoryId: string;
-  description: string;
   id: string;
   images: string[];
   sku: string;
@@ -27,6 +26,7 @@ export class Product {
   name: string;
   origin: string;
   slug: string;
+  description?: string;
   dimensions?: ProductDimensions;
   features?: ProductFeature[];
   variants?: ProductVariant[];

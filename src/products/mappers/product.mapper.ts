@@ -18,7 +18,6 @@ export class ProductMapper {
     return {
       brand: prismaProduct.brand,
       categoryId: prismaProduct.categoryId,
-      description: prismaProduct.description,
       id: prismaProduct.id,
       images: prismaProduct.images.map((img) => img.image),
       isActive: prismaProduct.isActive,
@@ -27,6 +26,10 @@ export class ProductMapper {
       price: prismaProduct.price.toString(),
       sku: prismaProduct.sku,
       slug: prismaProduct.slug,
+
+      ...(prismaProduct.description && {
+        description: prismaProduct.description,
+      }),
       ...(prismaProduct.productDimensions && {
         dimensions: {
           height: prismaProduct.productDimensions.height.toString(),

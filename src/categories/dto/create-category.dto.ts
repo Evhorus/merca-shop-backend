@@ -20,12 +20,12 @@ export class CreateCategoryDto {
   name: string;
 
   @IsString()
-  @IsNotEmpty()
   @Matches(/^\S+(?: \S+)*$/, {
     message:
       'Description must be normalized: no leading or trailing spaces, and no consecutive spaces',
   })
-  description: string;
+  @IsOptional()
+  description?: string;
 
   @IsString()
   @IsNotEmpty()

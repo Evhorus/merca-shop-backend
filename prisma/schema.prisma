@@ -20,7 +20,7 @@ model Product {
   slug              String             @unique
   origin            String
   sku               String             @unique
-  description       String
+  description       String?
   price             Decimal            @db.Decimal(10, 2)
   brand             String
   isActive          Boolean
@@ -93,7 +93,7 @@ model Category {
   id          String          @id @default(uuid())
   name        String          @unique
   slug        String          @unique
-  description String
+  description String?
   images      CategoryImage[]
   products    Product[]
   isActive    Boolean

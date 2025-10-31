@@ -40,10 +40,10 @@ export class CategoriesService {
     try {
       const createdCategory = await this.prisma.category.create({
         data: {
-          description: createCategoryDto.description,
           isActive: createCategoryDto.isActive,
           name: createCategoryDto.name,
           slug: createCategoryDto.slug,
+          description: createCategoryDto.description,
         },
       });
 
