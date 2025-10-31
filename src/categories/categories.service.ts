@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { Category, CategoryImage, Prisma } from 'generated/prisma';
 
 import {
@@ -28,6 +28,16 @@ export class CategoriesService {
     createCategoryDto: CreateCategoryDto,
     files: Express.Multer.File[],
   ): Promise<CategoryWithImages> {
+    const categoryExists = await this.prisma.category.findFirst({
+      where: {
+        OR: [{ name: createCategoryDto.name, slug: createCategoryDto.slug }],
+      },
+    });
+
+    if (categoryExists) {
+      throw new ConflictException('Category Already exists');
+    }
+
     return await this.prisma.$transaction(
       async (transaction): Promise<CategoryWithImages> => {
         try {
@@ -182,6 +192,16 @@ export class CategoriesService {
   // -- Remove Category --- //
   async remove(id: string): Promise<Category> {
     const category = await this.findOne({ where: { id } });
+
+    const productCount = await this.prisma.product.count({
+      where: { categoryId: id },
+    });
+
+    if (productCount > 0) {
+      throw new ConflictException(
+        'Cannot delete category because it has associated products',
+      );
+    }
 
     const deletedCategory = await this.prisma.category.delete({
       where: { id },

@@ -25,7 +25,7 @@ model Product {
   brand             String
   isActive          Boolean
   categoryId        String
-  category          Category           @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category          Category           @relation(fields: [categoryId], references: [id])
   images            ProductImage[]
   productVariants   ProductVariant[]
   productFeatures   ProductFeature[]
@@ -97,6 +97,8 @@ model Category {
   images      CategoryImage[]
   products    Product[]
   isActive    Boolean
+
+  @@index([name, slug])
 }
 
 model CategoryImage {
