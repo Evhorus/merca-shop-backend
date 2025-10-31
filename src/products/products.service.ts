@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,9 +15,9 @@ import { PaginationDto, PaginatedResponse } from 'src/common';
 import { CategoriesService } from 'src/categories/categories.service';
 import { ColorsService } from 'src/colors';
 
-import { ProductFeatureMapper, ProductMapper } from './mappers';
+import { ProductMapper } from './mappers';
 import { CreateProductDto, UpdateProductDto } from './dto';
-import { Product, ProductFeature } from './entities';
+import { Product } from './entities';
 
 @Injectable()
 export class ProductsService {
@@ -33,54 +35,67 @@ export class ProductsService {
     createProductDto: CreateProductDto,
     files: Array<Express.Multer.File>,
   ) {
-    await this.ensureProductDoesNotExist(createProductDto.name);
+    await this.validateUniqueProduct(createProductDto);
 
-    await this.ensureCategoryExists(createProductDto.categoryId);
+    await this.categoriesService.findOne({
+      where: { id: createProductDto.categoryId },
+    });
 
-    return await this.prisma.$transaction(async (transaction) => {
-      try {
-        // Create product
-        const createdProduct = await this.createProduct(
-          transaction,
-          createProductDto,
-        );
-
-        if (createProductDto.features) {
-          await this.createProductFeatures({
-            features: createProductDto.features,
-            productId: createdProduct.id,
-            transaction,
-          });
-        }
-
-        if (createProductDto.dimensions) {
-          await this.prisma.productDimensions.create({
+    try {
+      const createdProduct = await this.prisma.$transaction(
+        async (transaction) => {
+          const product = await transaction.product.create({
             data: {
-              ...createProductDto.dimensions,
-              productId: createdProduct.id,
+              brand: createProductDto.brand,
+              categoryId: createProductDto.categoryId,
+              description: createProductDto.description,
+              isActive: createProductDto.isActive,
+              name: createProductDto.name,
+              origin: createProductDto.origin,
+              slug: createProductDto.slug,
+              price: createProductDto.price,
+              sku: createProductDto.sku,
             },
           });
-        }
+          if (createProductDto.features) {
+            await transaction.productFeature.createMany({
+              data: createProductDto.features.map((feature) => ({
+                ...feature,
+                productId: product.id,
+              })),
+            });
+          }
+
+          if (createProductDto.dimensions) {
+            await transaction.productDimensions.create({
+              data: {
+                ...createProductDto.dimensions,
+                productId: product.id,
+              },
+            });
+          }
+
+          return product;
+        },
+      );
+      if (files && files.length > 0) {
         const { fileNames } = await this.filesService.uploadImages(
           files,
           `products/${createdProduct.id}`,
         );
 
-        if (files && files.length > 0) {
-          await this.createProductImages({
-            imageNames: fileNames,
+        await this.prisma.productImage.createMany({
+          data: fileNames.map((image) => ({
             productId: createdProduct.id,
-            transaction,
-          });
-        }
-        return {
-          ...createdProduct,
-        };
-      } catch (error) {
-        this.logger.error(`Transaction failed: ${error}`);
-        throw error;
+            image,
+          })),
+        });
       }
-    });
+
+      return createdProduct;
+    } catch (error) {
+      this.handleError(error, 'creating product');
+    }
   }
 
   async findAll(
@@ -147,82 +162,94 @@ export class ProductsService {
     files: Array<Express.Multer.File>,
   ) {
     await this.findOne({ where: { id } });
+    await this.validateUniqueProduct(updateProductDto, id);
 
-    return this.prisma.$transaction(async (transaction) => {
-      let imagesNames: string[] = updateProductDto.images || [];
-      try {
-        // update product
-        const updatedProduct = await this.updateProduct({
-          dto: updateProductDto,
-          productId: id,
-          transaction,
-        });
-
-        if (updateProductDto.dimensions) {
-          await transaction.productDimensions.deleteMany({
-            where: { productId: updatedProduct.id },
-          });
-
-          await transaction.productDimensions.create({
+    try {
+      const updatedProduct = await this.prisma.$transaction(
+        async (transaction) => {
+          const product = await transaction.product.update({
+            where: { id },
             data: {
-              ...updateProductDto.dimensions,
-              productId: updatedProduct.id,
+              brand: updateProductDto.brand,
+              categoryId: updateProductDto.categoryId,
+              description: updateProductDto.description,
+              isActive: updateProductDto.isActive,
+              name: updateProductDto.name,
+              origin: updateProductDto.origin,
+              slug: updateProductDto.slug,
+              price: updateProductDto.price,
+              sku: updateProductDto.sku,
             },
           });
-        } else {
-          await transaction.productDimensions.deleteMany({
-            where: { productId: updatedProduct.id },
-          });
-        }
 
-        if (files && files.length > 0) {
-          // Upload Images
-          const images = await this.filesService.uploadImages(
-            files,
-            `products/${updatedProduct.id}`,
-          );
+          if (updateProductDto.dimensions) {
+            await transaction.productDimensions.deleteMany({
+              where: { productId: product.id },
+            });
 
-          imagesNames.push(...images.fileNames);
-        }
+            await transaction.productDimensions.create({
+              data: {
+                ...updateProductDto.dimensions,
+                productId: product.id,
+              },
+            });
+          } else {
+            await transaction.productDimensions.deleteMany({
+              where: { productId: product.id },
+            });
+          }
 
-        imagesNames = Array.from(new Set(imagesNames));
+          if (
+            updateProductDto.features &&
+            updateProductDto.features?.length > 0
+          ) {
+            await transaction.productFeature.deleteMany({
+              where: { productId: product.id },
+            });
 
-        if (imagesNames.length > 0) {
-          await transaction.productImage.deleteMany({
-            where: { productId: updatedProduct.id },
-          });
+            await transaction.productFeature.createMany({
+              data: updateProductDto.features.map((feature) => ({
+                ...feature,
+                productId: product.id,
+              })),
+            });
+          }
 
-          // Create Images
-          await this.createProductImages({
-            imageNames: imagesNames,
-            productId: updatedProduct.id,
-            transaction,
-          });
-        }
+          return product;
+        },
+      );
 
-        if (
-          updateProductDto.features &&
-          updateProductDto.features?.length > 0
-        ) {
-          await transaction.productFeature.deleteMany({
-            where: { productId: updatedProduct.id },
-          });
+      let imagesNames: string[] = updateProductDto.images || [];
 
-          await this.createProductFeatures({
-            features: updateProductDto.features,
-            productId: updatedProduct.id,
-            transaction,
-          });
-        }
+      if (files && files.length > 0) {
+        // Upload Images
+        const images = await this.filesService.uploadImages(
+          files,
+          `products/${updatedProduct.id}`,
+        );
 
-        return {
-          ...updatedProduct,
-        };
-      } catch (error) {
-        this.logger.error(`Transaction failed: ${error}`);
-        throw error;
+        imagesNames.push(...images.fileNames);
       }
-    });
+
+      imagesNames = Array.from(new Set(imagesNames));
+
+      if (imagesNames.length > 0) {
+        await this.prisma.productImage.deleteMany({
+          where: { productId: updatedProduct.id },
+        });
+
+        // Create Images
+        await this.prisma.productImage.createMany({
+          data: imagesNames.map((image) => ({
+            productId: updatedProduct.id,
+            image,
+          })),
+        });
+      }
+      return updatedProduct;
+    } catch (error) {
+      this.handleError(error, 'updating product');
+    }
   }
 
   async remove(id: string) {
@@ -236,181 +263,78 @@ export class ProductsService {
     return deleteProduct;
   }
 
-  private async ensureProductDoesNotExist(name: string) {
-    const productExist = await this.prisma.product.findUnique({
-      where: { name },
-    });
-
-    if (productExist) {
-      throw new BadRequestException(this.ERROR_MESSAGES.PRODUCT_EXISTS);
-    }
-  }
-
-  private async ensureCategoryExists(categoryId: string) {
-    await this.categoriesService.findOne({ where: { id: categoryId } });
-  }
-
-  private async createProduct(
-    transaction: Prisma.TransactionClient,
-    dto: CreateProductDto,
+  //----- Utils ----//
+  private async validateUniqueProduct(
+    dto: CreateProductDto | UpdateProductDto,
+    excludeId?: string,
   ) {
-    return await transaction.product.create({
-      data: {
-        brand: dto.brand,
-        categoryId: dto.categoryId,
-        description: dto.description,
-        isActive: dto.isActive,
-        name: dto.name,
-        origin: dto.origin,
-        slug: dto.slug,
-        price: dto.price,
-        sku: dto.sku,
-      },
-    });
-  }
-
-  private async updateProduct({
-    dto,
-    productId,
-    transaction,
-  }: {
-    dto: UpdateProductDto;
-    productId: string;
-    transaction: Prisma.TransactionClient;
-  }) {
-    return await transaction.product.update({
-      where: { id: productId },
-      data: {
-        brand: dto.brand,
-        categoryId: dto.categoryId,
-        description: dto.description,
-        isActive: dto.isActive,
-        name: dto.name,
-        origin: dto.origin,
-        slug: dto.slug,
-        price: dto.price,
-        sku: dto.sku,
-      },
-    });
-  }
-
-  private async createProductFeatures({
-    features,
-    productId,
-    transaction,
-  }: {
-    features: CreateProductDto['features'];
-    productId: string;
-    transaction: Prisma.TransactionClient;
-  }): Promise<ProductFeature[]> {
-    if (!features) {
-      throw new BadRequestException(
-        'Features no present on create (createProductFeatures)',
-      );
+    if (!dto.name && !dto.sku && !dto.slug) {
+      return;
     }
 
-    const createdFeatures = await Promise.all(
-      features.map((feature) =>
-        transaction.productFeature.create({
-          data: {
-            ...feature,
-            productId,
-          },
-        }),
-      ),
-    );
+    const conditions: Prisma.ProductWhereInput[] = [];
 
-    return ProductFeatureMapper.toPresentationArray(createdFeatures);
+    if (dto.name) conditions.push({ name: dto.name });
+    if (dto.sku) conditions.push({ sku: dto.sku });
+    if (dto.slug) conditions.push({ slug: dto.slug });
+
+    const existingProduct = await this.prisma.product.findFirst({
+      where: {
+        AND: [excludeId ? { NOT: { id: excludeId } } : {}, { OR: conditions }],
+      },
+      select: {
+        name: true,
+        sku: true,
+        slug: true,
+      },
+    });
+
+    if (existingProduct) {
+      if (dto.name && existingProduct.name === dto.name) {
+        throw new ConflictException('A product with this name already exists');
+      }
+      if (dto.sku && existingProduct.sku === dto.sku) {
+        throw new ConflictException('A product with this SKU already exists');
+      }
+      if (dto.slug && existingProduct.slug === dto.slug) {
+        throw new ConflictException('A product with this slug already exists');
+      }
+    }
   }
 
-  private async createProductImages({
-    imageNames,
-    productId,
-    transaction,
-  }: {
-    imageNames: string[];
-    productId: string;
-    transaction: Prisma.TransactionClient;
-  }): Promise<void> {
-    await Promise.all(
-      imageNames.map((image) =>
-        transaction.productImage.create({
-          data: {
-            productId,
-            image,
-          },
-        }),
-      ),
-    );
-  }
+  private handleError(error: any, context: string): never {
+    this.logger.error(`Error ${context}:`, error);
 
-  private normalizeNumberString(value: string): number {
-    const cleaned = value.replace(/\./g, '');
-    const n = Number(cleaned);
-    return n;
+    // Si ya es una excepción HTTP de NestJS, re-lanzarla
+    if (
+      error instanceof BadRequestException ||
+      error instanceof NotFoundException ||
+      error instanceof ConflictException
+    ) {
+      throw error;
+    }
+
+    // Manejar errores específicos de Prisma
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if (error.code === 'P2025') {
+      throw new NotFoundException('Resource not found');
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if (error.code === 'P2003') {
+      throw new BadRequestException('Foreign key constraint failed');
+    }
+
+    // Error genérico
+    throw new InternalServerErrorException(
+      `An error occurred while ${context}`,
+    );
   }
 
   private readonly ERROR_MESSAGES = {
-    PRODUCT_EXISTS: 'Product already exists',
     PRODUCT_VARIANT_EXISTS: 'Product variant already exists',
     PRODUCT_NOT_FOUND: 'Product not found',
     PRODUCT_DELETED: 'Product deleted successfully',
     COLOR_NOT_FOUND: 'Color not found',
   } as const;
 }
-
-// private async ensureProductVariantDoesNotExist(sku: string) {
-//   const productVariantExist = await this.prisma.productVariant.findUnique({
-//     where: { sku },
-//   });
-
-//   if (productVariantExist) {
-//     throw new BadRequestException(this.ERROR_MESSAGES.PRODUCT_VARIANT_EXISTS);
-//   }
-// }
-
-// private async createProductVariantsWithTransaction({
-//   productId,
-//   transaction,
-//   variants,
-// }: {
-//   productId: string;
-//   transaction: Prisma.TransactionClient;
-//   variants: CreateProductDto['variants'];
-// }): Promise<ProductVariant[]> {
-//   const createdProductVariants = await Promise.all(
-//     variants.map(async (variant) => {
-//       await this.ensureProductVariantDoesNotExist(variant.sku);
-
-//       const { colorName } = await this.colorsService.findOne({
-//         colorName: variant.colorName,
-//       });
-
-//       const productVariant = await transaction.productVariant.create({
-//         data: {
-//           availableQuantity: variant.availableQuantity,
-//           color: colorName,
-//           price: this.normalizeNumberString(variant.price),
-//           sku: variant.sku,
-//           productId,
-//         },
-//         include: {
-//           productVariantDimensions: true,
-//         },
-//       });
-
-//       // if (variant.dimensions) {
-//       //   await transaction.productVariantDimension.create({
-//       //     data: {
-//       //       ...variant.dimensions,
-//       //       productVariantId: productVariant.id,
-//       //     },
-//       //   });
-//       // }
-
-//       return productVariant;
-//     }),
-//   );
-
-//   return ProductVariantMapper.toPresentationArray(createdProductVariants);
-// }
