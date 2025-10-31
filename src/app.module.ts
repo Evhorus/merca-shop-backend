@@ -7,9 +7,13 @@ import { CommonModule } from './common/common.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ProductsModule } from './products/products.module';
 import { ColorsModule } from './colors/colors.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { HealthCheckModule } from './health-check/health-check.module';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
+    HealthCheckModule,
     AuthModule,
     PrismaModule,
     CloudinaryModule,
