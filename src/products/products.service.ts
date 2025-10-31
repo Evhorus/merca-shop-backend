@@ -223,12 +223,11 @@ export class ProductsService {
 
       if (files && files.length > 0) {
         // Upload Images
-        const images = await this.filesService.uploadImages(
+        const { fileNames } = await this.filesService.uploadImages(
           files,
           `products/${updatedProduct.id}`,
         );
-
-        imagesNames.push(...images.fileNames);
+        imagesNames.push(...fileNames);
       }
 
       imagesNames = Array.from(new Set(imagesNames));

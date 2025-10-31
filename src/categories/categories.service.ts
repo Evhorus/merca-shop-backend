@@ -1,5 +1,12 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import { Category, CategoryImage, Prisma } from 'generated/prisma';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { Category, Prisma } from 'generated/prisma';
 
 import {
   PaginationDto,
@@ -27,47 +34,36 @@ export class CategoriesService {
   async create(
     createCategoryDto: CreateCategoryDto,
     files: Express.Multer.File[],
-  ): Promise<CategoryWithImages> {
-    const categoryExists = await this.prisma.category.findFirst({
-      where: {
-        OR: [{ name: createCategoryDto.name, slug: createCategoryDto.slug }],
-      },
-    });
+  ) {
+    await this.validateUniqueProduct(createCategoryDto);
 
-    if (categoryExists) {
-      throw new ConflictException('Category Already exists');
+    try {
+      const createdCategory = await this.prisma.category.create({
+        data: {
+          description: createCategoryDto.description,
+          isActive: createCategoryDto.isActive,
+          name: createCategoryDto.name,
+          slug: createCategoryDto.slug,
+        },
+      });
+
+      if (files && files.length > 0) {
+        const { fileNames } = await this.filesService.uploadImages(
+          files,
+          `categories/${createdCategory.id}`,
+        );
+
+        await this.prisma.productImage.createMany({
+          data: fileNames.map((image) => ({
+            productId: createdCategory.id,
+            image,
+          })),
+        });
+      }
+      return createdCategory;
+    } catch (error) {
+      this.handleError(error, 'creating category');
     }
-
-    return await this.prisma.$transaction(
-      async (transaction): Promise<CategoryWithImages> => {
-        try {
-          // Create Category
-          const createdCategory = await this.createCategoryWithTransaction(
-            createCategoryDto,
-            transaction,
-          );
-
-          const images = await this.filesService.uploadImages(
-            files,
-            `categories/${createdCategory.id}`,
-          );
-
-          const productImages = await this.createCategoryImagesWithTransaction({
-            categoryId: createdCategory.id,
-            images: images.fileNames,
-            transaction,
-          });
-
-          return {
-            ...createdCategory,
-            images: productImages,
-          };
-        } catch (error) {
-          this.logger.error(`Transaction failed: ${error}`);
-          throw error;
-        }
-      },
-    );
   }
 
   // --- Find All Categories Paginated -- //
@@ -140,53 +136,47 @@ export class CategoriesService {
     id: string,
     updateCategoryDto: UpdateCategoryDto,
     files: Array<Express.Multer.File>,
-  ): Promise<CategoryWithImages> {
+  ) {
     await this.findOne({ where: { id } });
-    return await this.prisma.$transaction(
-      async (transaction): Promise<CategoryWithImages> => {
-        let imagesNames: string[] = updateCategoryDto.images || [];
-        try {
-          // Update category
-          const updatedCategory = await this.updateCategoryWithTransaction(
-            id,
-            updateCategoryDto,
-            transaction,
-          );
+    await this.validateUniqueProduct(updateCategoryDto, id);
+    try {
+      const updatedCategory = await this.prisma.category.update({
+        where: { id },
+        data: {
+          description: updateCategoryDto.description,
+          isActive: updateCategoryDto.isActive,
+          name: updateCategoryDto.name,
+          slug: updateCategoryDto.slug,
+        },
+      });
 
-          if (files && files.length > 0) {
-            const images = await this.filesService.uploadImages(
-              files,
-              `categories/${updatedCategory.id}`,
-            );
-            imagesNames.push(...images.fileNames);
-          }
+      let imagesNames: string[] = updateCategoryDto.images || [];
 
-          imagesNames = Array.from(new Set(imagesNames));
+      if (files && files.length > 0) {
+        const { fileNames } = await this.filesService.uploadImages(
+          files,
+          `categories/${updatedCategory.id}`,
+        );
+        imagesNames.push(...fileNames);
+      }
+      imagesNames = Array.from(new Set(imagesNames));
+      if (imagesNames.length > 0) {
+        await this.prisma.categoryImage.deleteMany({
+          where: { categoryId: updatedCategory.id },
+        });
 
-          let createdImages: CategoryImage[] = [];
-
-          if (imagesNames.length > 0) {
-            await transaction.categoryImage.deleteMany({
-              where: { categoryId: updatedCategory.id },
-            });
-
-            createdImages = await this.createCategoryImagesWithTransaction({
-              categoryId: updatedCategory.id,
-              images: imagesNames,
-              transaction,
-            });
-          }
-
-          return {
-            ...updatedCategory,
-            images: createdImages,
-          };
-        } catch (error) {
-          this.logger.error(`Transaction failed: ${error}`);
-          throw error;
-        }
-      },
-    );
+        // Create Images
+        await this.prisma.categoryImage.createMany({
+          data: imagesNames.map((image) => ({
+            categoryId: updatedCategory.id,
+            image,
+          })),
+        });
+      }
+      return updatedCategory;
+    } catch (error) {
+      this.handleError(error, 'updating category');
+    }
   }
 
   // -- Remove Category --- //
@@ -207,59 +197,71 @@ export class CategoriesService {
       where: { id },
     });
 
-    await this.cloudinary.deleteImagesByFolder(`products/${category.id}`);
+    await this.cloudinary.deleteImagesByFolder(`categories/${category.id}`);
 
     return deletedCategory;
   }
 
-  async createCategoryWithTransaction(
-    dto: CreateCategoryDto,
-    transaction: Prisma.TransactionClient,
-  ): Promise<Category> {
-    return transaction.category.create({
-      data: {
-        description: dto.description,
-        isActive: dto.isActive,
-        name: dto.name,
-        slug: dto.slug,
+  //----- Utils ----//
+  private async validateUniqueProduct(
+    dto: CreateCategoryDto | UpdateCategoryDto,
+    excludeId?: string,
+  ) {
+    if (!dto.name && !dto.slug) {
+      return;
+    }
+
+    const conditions: Prisma.CategoryWhereInput[] = [];
+
+    if (dto.name) conditions.push({ name: dto.name });
+    if (dto.slug) conditions.push({ slug: dto.slug });
+
+    const existingProduct = await this.prisma.category.findFirst({
+      where: {
+        AND: [excludeId ? { NOT: { id: excludeId } } : {}, { OR: conditions }],
+      },
+      select: {
+        name: true,
+        slug: true,
       },
     });
+
+    if (existingProduct) {
+      if (dto.name && existingProduct.name === dto.name) {
+        throw new ConflictException('A category with this name already exists');
+      }
+      if (dto.slug && existingProduct.slug === dto.slug) {
+        throw new ConflictException('A category with this slug already exists');
+      }
+    }
   }
 
-  async updateCategoryWithTransaction(
-    categoryId: string,
-    dto: UpdateCategoryDto,
-    transaction: Prisma.TransactionClient,
-  ): Promise<Category> {
-    return transaction.category.update({
-      where: { id: categoryId },
-      data: {
-        description: dto.description,
-        isActive: dto.isActive,
-        name: dto.name,
-        slug: dto.slug,
-      },
-    });
-  }
+  private handleError(error: any, context: string): never {
+    this.logger.error(`Error ${context}:`, error);
 
-  async createCategoryImagesWithTransaction({
-    categoryId,
-    images,
-    transaction,
-  }: {
-    categoryId: string;
-    images: string[];
-    transaction: Prisma.TransactionClient;
-  }): Promise<CategoryImage[]> {
-    return await Promise.all(
-      images.map((image) =>
-        transaction.categoryImage.create({
-          data: {
-            categoryId: categoryId,
-            image: image,
-          },
-        }),
-      ),
+    // Si ya es una excepción HTTP de NestJS, re-lanzarla
+    if (
+      error instanceof BadRequestException ||
+      error instanceof NotFoundException ||
+      error instanceof ConflictException
+    ) {
+      throw error;
+    }
+
+    // Manejar errores específicos de Prisma
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if (error.code === 'P2025') {
+      throw new NotFoundException('Resource not found');
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if (error.code === 'P2003') {
+      throw new BadRequestException('Foreign key constraint failed');
+    }
+
+    // Error genérico
+    throw new InternalServerErrorException(
+      `An error occurred while ${context}`,
     );
   }
 }
