@@ -11,7 +11,6 @@ import {
   IsBoolean,
   IsEnum,
   MinLength,
-  MaxLength,
   NotContains,
   Matches,
   IsArray,
@@ -125,7 +124,6 @@ export class CreateProductDto {
     message: 'Slug only allows lowercase letters, numbers and hyphens.',
   })
   @MinLength(3)
-  @MaxLength(50)
   @NotContains(' ', { message: 'Slug should NOT contain whitespace.' })
   slug: string;
 
