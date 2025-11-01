@@ -26,7 +26,8 @@ export class ProductMapper {
       price: prismaProduct.price.toString(),
       sku: prismaProduct.sku,
       slug: prismaProduct.slug,
-
+      stock: prismaProduct.stock,
+      ...(prismaProduct.colorId && { colorId: prismaProduct.colorId }),
       ...(prismaProduct.description && {
         description: prismaProduct.description,
       }),

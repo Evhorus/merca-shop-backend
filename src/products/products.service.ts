@@ -48,13 +48,15 @@ export class ProductsService {
             data: {
               brand: createProductDto.brand,
               categoryId: createProductDto.categoryId,
-              description: createProductDto.description,
+              description: createProductDto.description || null,
               isActive: createProductDto.isActive,
               name: createProductDto.name,
               origin: createProductDto.origin,
               slug: createProductDto.slug,
               price: createProductDto.price,
               sku: createProductDto.sku,
+              colorId: createProductDto.colorId,
+              stock: createProductDto.stock || 0,
             },
           });
           if (createProductDto.features) {
@@ -179,6 +181,8 @@ export class ProductsService {
               slug: updateProductDto.slug,
               price: updateProductDto.price,
               sku: updateProductDto.sku,
+              colorId: updateProductDto.colorId,
+              stock: updateProductDto.stock || 0,
             },
           });
 

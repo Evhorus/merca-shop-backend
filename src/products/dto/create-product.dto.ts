@@ -15,6 +15,7 @@ import {
   NotContains,
   Matches,
   IsArray,
+  IsNumber,
 } from 'class-validator';
 
 export class ProductFeatureDto {
@@ -139,8 +140,16 @@ export class CreateProductDto {
   @Transform(({ value }) => value === 'true' || value === true)
   isActive: boolean;
 
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  stock: number;
+
   @IsUUID()
   categoryId: string;
+
+  @IsUUID()
+  colorId: string;
 
   @IsOptional()
   @Transform(({ value }) =>

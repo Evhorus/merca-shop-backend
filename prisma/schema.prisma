@@ -20,16 +20,19 @@ model Product {
   slug              String             @unique
   origin            String
   sku               String             @unique
-  description       String?
   price             Decimal            @db.Decimal(10, 2)
   brand             String
+  stock             Int                @default(0)
   isActive          Boolean
   categoryId        String
+  description       String?
   category          Category           @relation(fields: [categoryId], references: [id])
   images            ProductImage[]
   productVariants   ProductVariant[]
   productFeatures   ProductFeature[]
   productDimensions ProductDimensions?
+  color             Color?             @relation(fields: [colorId], references: [id])
+  colorId           String?
 
   @@index([categoryId, sku, brand])
 }
@@ -109,9 +112,10 @@ model CategoryImage {
 }
 
 model Color {
-  id        String @id @default(uuid())
-  colorCode String @unique
+  id        String    @id @default(uuid())
+  colorCode String    @unique
   colorName String
+  products  Product[]
 
   @@unique([colorCode, colorName])
 }

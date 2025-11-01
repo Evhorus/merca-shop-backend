@@ -38,7 +38,7 @@ export class ColorsController {
   @Public()
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateColorDto: UpdateColorDto) {
-    return this.colorsService.update(+id, updateColorDto);
+    return this.colorsService.update(id, updateColorDto);
   }
 
   @Public()

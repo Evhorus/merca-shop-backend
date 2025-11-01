@@ -26,6 +26,8 @@ export class Product {
   name: string;
   origin: string;
   slug: string;
+  stock: number;
+  colorId?: string;
   description?: string;
   dimensions?: ProductDimensions;
   features?: ProductFeature[];

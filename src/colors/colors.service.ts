@@ -50,8 +50,9 @@ export class ColorsService {
   }
 
   // !TODO
-  update(id: number, updateColorDto: UpdateColorDto) {
-    return `This action updates a #${id} color`;
+  async update(id: string, updateColorDto: UpdateColorDto) {
+    await this.findOne({ id });
+    return this.prisma.color.update({ where: { id }, data: updateColorDto });
   }
 
   // !TODO
