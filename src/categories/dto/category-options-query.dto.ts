@@ -18,4 +18,9 @@ export class CategoryOptionsQueryDto extends PaginationDto {
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
   withProductCount?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
+  fetchAll?: boolean;
 }

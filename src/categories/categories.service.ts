@@ -8,17 +8,17 @@ import {
 } from '@nestjs/common';
 import { Category, Prisma } from 'generated/prisma';
 
-import {
-  PaginationDto,
-  PaginatedResponse,
-  ResourceNotFoundException,
-} from 'src/common';
+import { ResourceNotFoundException } from 'src/common';
 import { PrismaService } from 'src/prisma';
 import { FilesService } from 'src/files';
 import { CloudinaryService } from 'src/cloudinary';
 
-import { CreateCategoryDto, UpdateCategoryDto } from './dto';
-import { CategoryWithAllRelations, CategoryWithImages } from './interfaces';
+import {
+  CategoryOptionsQueryDto,
+  CreateCategoryDto,
+  UpdateCategoryDto,
+} from './dto';
+import { CategoryWithAllRelations } from './interfaces';
 
 @Injectable()
 export class CategoriesService {
@@ -67,26 +67,39 @@ export class CategoriesService {
   }
 
   // --- Find All Categories Paginated -- //
-  async findAll(
-    paginationDto: PaginationDto,
-  ): Promise<PaginatedResponse<CategoryWithImages>> {
-    const { limit = 10, offset = 0, q } = paginationDto;
+  async findAll(categoryOptionsQueryDto: CategoryOptionsQueryDto) {
+    const {
+      limit = 10,
+      offset = 0,
+      q,
+      withImages,
+      withProductCount,
+      withProducts,
+    } = categoryOptionsQueryDto;
 
     const where: Prisma.CategoryWhereInput = {
       name: { contains: q, mode: 'insensitive' },
     };
 
-    const [categories, totalCategories] = await Promise.all([
+    const countSelect = withProductCount ? { products: true } : undefined;
+
+    const result = await Promise.all([
       this.prisma.category.findMany({
-        take: limit,
-        skip: offset,
-        include: { images: true, _count: { select: { products: true } } },
+        include: {
+          images: withImages,
+          products: withProducts,
+          _count: countSelect ? { select: countSelect } : undefined,
+        },
         orderBy: { id: 'asc' },
         where,
+        take: limit,
+        skip: offset,
       }),
       this.prisma.category.count({ where }),
     ]);
 
+    const totalCategories = result[1];
+    const categories = result[0];
     return {
       count: totalCategories,
       pages: Math.ceil(totalCategories / limit),
