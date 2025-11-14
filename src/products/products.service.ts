@@ -56,7 +56,7 @@ export class ProductsService {
               slug: createProductDto.slug,
               price: createProductDto.price,
               sku: createProductDto.sku,
-              colorId: createProductDto.colorId,
+              colorId: createProductDto.colorId || null,
               stock: createProductDto.stock || 0,
             },
           });
@@ -179,7 +179,7 @@ export class ProductsService {
               slug: updateProductDto.slug,
               price: updateProductDto.price,
               sku: updateProductDto.sku,
-              colorId: updateProductDto.colorId,
+              colorId: updateProductDto.colorId || null,
               stock: updateProductDto.stock || 0,
             },
           });
