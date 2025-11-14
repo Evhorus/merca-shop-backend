@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../generated/prisma"
@@ -14,6 +11,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Product model: represents items in the catalog
 model Product {
   id                String             @id @default(uuid())
   name              String             @unique
@@ -37,6 +35,7 @@ model Product {
   @@index([categoryId, sku, brand])
 }
 
+// Product features: key-value attributes like material, warranty, etc.
 model ProductFeature {
   id        String  @id @default(uuid())
   name      String
@@ -45,6 +44,7 @@ model ProductFeature {
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
+// Product images: stores image URLs or paths for each product
 model ProductImage {
   id        String  @id @default(uuid())
   image     String
@@ -52,6 +52,7 @@ model ProductImage {
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
+// Product dimensions: length, width, height for shipping and display
 model ProductDimensions {
   id        String  @id @default(uuid())
   length    Decimal @db.Decimal(10, 2)
@@ -62,6 +63,7 @@ model ProductDimensions {
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
+// Product variants: different SKUs for colors, sizes, etc.
 model ProductVariant {
   id                       String                   @id @default(uuid())
   sku                      String                   @unique
@@ -73,6 +75,7 @@ model ProductVariant {
   productVariantDimensions ProductVariantDimension?
 }
 
+// Product variant dimensions: specific measurements for each variant
 model ProductVariantDimension {
   id               String         @id @default(uuid())
   length           Decimal        @db.Decimal(10, 2)
@@ -85,6 +88,7 @@ model ProductVariantDimension {
   productVariant   ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
 }
 
+// Unit enum: measurement units for dimensions
 enum Unit {
   cm
   in
@@ -92,6 +96,7 @@ enum Unit {
   m
 }
 
+// Category model: hierarchical product organization with self-reference
 model Category {
   id          String          @id @default(uuid())
   name        String          @unique
@@ -107,16 +112,18 @@ model Category {
   @@index([name, slug])
 }
 
+// Category images: multiple images per category, unique per category
 model CategoryImage {
   id         String   @id @default(uuid())
   image      String
   categoryId String
   Category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
-  @@unique([categoryId, image]) // Unique per category, allows same image in other categories
+  @@unique([categoryId, image]) // Each image is unique per category
   @@index([categoryId])
 }
 
+// Color model: standard color codes and names for products
 model Color {
   id        String    @id @default(uuid())
   colorCode String    @unique
