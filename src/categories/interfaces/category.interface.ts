@@ -7,6 +7,8 @@ export type CategoryWithImages = Prisma.CategoryGetPayload<{
 export type CategoryWithAllRelations = Prisma.CategoryGetPayload<{
   include: {
     images: { select: { image: true } };
+    products: true;
     _count: { select: { products: true } };
+    children: true;
   };
 }>;

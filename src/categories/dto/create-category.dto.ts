@@ -9,6 +9,7 @@ import {
   MaxLength,
   MinLength,
   NotContains,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateCategoryDto {
@@ -50,4 +51,8 @@ export class CreateCategoryDto {
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
   isActive: boolean;
+
+  @IsUUID()
+  @IsOptional()
+  parentId?: string | null; // Solo permite 2 niveles: Categoría raíz → Categoría hija
 }

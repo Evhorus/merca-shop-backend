@@ -10,8 +10,6 @@ import { Category, Prisma } from 'generated/prisma';
 
 import { ResourceNotFoundException } from 'src/common';
 import { PrismaService } from 'src/prisma';
-import { FilesService } from 'src/files';
-import { CloudinaryService } from 'src/cloudinary';
 
 import {
   CategoryOptionsQueryDto,
@@ -19,6 +17,7 @@ import {
   UpdateCategoryDto,
 } from './dto';
 import { CategoryWithAllRelations } from './interfaces';
+import { MediaService } from 'src/media/media.service';
 
 @Injectable()
 export class CategoriesService {
@@ -26,16 +25,32 @@ export class CategoriesService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly filesService: FilesService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly mediaService: MediaService,
   ) {}
 
-  // --- Create Category --- //
+  /**
+   * Creates a new category, validates relations, and uploads images
+   */
   async create(
     createCategoryDto: CreateCategoryDto,
     files: Express.Multer.File[],
   ) {
-    await this.validateUniqueProduct(createCategoryDto);
+    await this.validateUniqueCategory(createCategoryDto);
+
+    // Validate parent category existence and max depth (no more than 2 levels)
+    if (createCategoryDto.parentId) {
+      const parentCategory = await this.findOne({
+        where: { id: createCategoryDto.parentId },
+        withImages: false,
+        withProducts: false,
+      });
+
+      if (parentCategory.parentId) {
+        throw new BadRequestException(
+          `Cannot create a subcategory under "${parentCategory.name}" because it is already a subcategory. Only two category levels are allowed.`,
+        );
+      }
+    }
 
     try {
       const createdCategory = await this.prisma.category.create({
@@ -44,29 +59,28 @@ export class CategoriesService {
           name: createCategoryDto.name,
           slug: createCategoryDto.slug,
           description: createCategoryDto.description,
+          parentId: createCategoryDto.parentId || null,
         },
       });
 
+      // Upload images using MediaService
       if (files && files.length > 0) {
-        const { fileNames } = await this.filesService.uploadImages(
+        await this.mediaService.uploadImages(
+          'category',
+          createdCategory.id,
           files,
-          `categories/${createdCategory.id}`,
         );
-
-        await this.prisma.categoryImage.createMany({
-          data: fileNames.map((image) => ({
-            categoryId: createdCategory.id,
-            image,
-          })),
-        });
       }
+
       return createdCategory;
     } catch (error) {
       this.handleError(error, 'creating category');
     }
   }
 
-  // --- Find All Categories Paginated -- //
+  /**
+   * Returns paginated categories, includes child categories and relations based on options
+   */
   async findAll(categoryOptionsQueryDto: CategoryOptionsQueryDto) {
     const {
       limit = 10,
@@ -75,20 +89,29 @@ export class CategoriesService {
       withImages,
       withProductCount,
       withProducts,
+      onlyRoot,
+      onlyChildren,
+      currentCategoryId,
     } = categoryOptionsQueryDto;
 
     const where: Prisma.CategoryWhereInput = {
       name: { contains: q, mode: 'insensitive' },
+      ...(onlyRoot ? { parentId: null } : {}),
+      ...(onlyChildren ? { parentId: { not: null } } : {}),
+      ...(currentCategoryId ? { NOT: { id: currentCategoryId } } : {}),
     };
 
-    const countSelect = withProductCount ? { products: true } : undefined;
+    const include = this.buildCategoryInclude({
+      withImages,
+      withProducts,
+      withProductCount,
+    });
 
     const result = await Promise.all([
       this.prisma.category.findMany({
         include: {
-          images: withImages,
-          products: withProducts,
-          _count: countSelect ? { select: countSelect } : undefined,
+          ...include,
+          children: { include },
         },
         orderBy: { id: 'asc' },
         where,
@@ -103,13 +126,13 @@ export class CategoriesService {
     return {
       count: totalCategories,
       pages: Math.ceil(totalCategories / limit),
-      data: categories.map((category) => ({
-        ...category,
-      })),
+      data: categories,
     };
   }
 
-  // --- Find category --- //
+  /**
+   * Finds a category, includes relations based on options
+   */
   async findOne({
     where,
     withImages,
@@ -121,14 +144,11 @@ export class CategoriesService {
     withProducts?: boolean;
     withProductCount?: boolean;
   }): Promise<CategoryWithAllRelations> {
-    const include: Prisma.CategoryInclude = {
-      ...(withImages && { images: { select: { image: true } } }),
-      ...(withProducts && {
-        products: true,
-        _count: { select: { products: true } },
-      }),
-      ...(withProductCount && { _count: { select: { products: true } } }),
-    };
+    const include = this.buildCategoryInclude({
+      withImages,
+      withProducts,
+      withProductCount,
+    });
 
     const category = await this.prisma.category.findUnique({
       where,
@@ -139,20 +159,35 @@ export class CategoriesService {
       throw new ResourceNotFoundException('Category');
     }
 
-    return {
-      ...category,
-    };
+    return category;
   }
 
-  // --- Update Category --- //
+  /**
+   * Updates category info, validates relations and updates images
+   */
   async update(
     id: string,
     updateCategoryDto: UpdateCategoryDto,
     files: Array<Express.Multer.File>,
   ) {
-    console.log(updateCategoryDto.description);
-    await this.findOne({ where: { id } });
-    await this.validateUniqueProduct(updateCategoryDto, id);
+    await this.validateUniqueCategory(updateCategoryDto, id);
+
+    // Validate parent relationship and max depth
+    if (updateCategoryDto.parentId) {
+      await this.validateNoCyclicReference(id, updateCategoryDto.parentId);
+      const parentCategory = await this.findOne({
+        where: { id: updateCategoryDto.parentId },
+        withImages: false,
+        withProducts: false,
+      });
+
+      if (parentCategory.parentId) {
+        throw new BadRequestException(
+          `Cannot assign "${parentCategory.name}" as parent because it is already a subcategory. Only two category levels are allowed.`,
+        );
+      }
+    }
+
     try {
       const updatedCategory = await this.prisma.category.update({
         where: { id },
@@ -161,41 +196,29 @@ export class CategoriesService {
           isActive: updateCategoryDto.isActive,
           name: updateCategoryDto.name,
           slug: updateCategoryDto.slug,
+          parentId: updateCategoryDto.parentId || null,
         },
       });
 
-      let imagesNames: string[] = updateCategoryDto.images || [];
+      // Replace images using MediaService
+      await this.mediaService.replaceImages(
+        'category',
+        updatedCategory.id,
+        updateCategoryDto.images || [],
+        files,
+      );
 
-      if (files && files.length > 0) {
-        const { fileNames } = await this.filesService.uploadImages(
-          files,
-          `categories/${updatedCategory.id}`,
-        );
-        imagesNames.push(...fileNames);
-      }
-      imagesNames = Array.from(new Set(imagesNames));
-      if (imagesNames.length > 0) {
-        await this.prisma.categoryImage.deleteMany({
-          where: { categoryId: updatedCategory.id },
-        });
-
-        // Create Images
-        await this.prisma.categoryImage.createMany({
-          data: imagesNames.map((image) => ({
-            categoryId: updatedCategory.id,
-            image,
-          })),
-        });
-      }
       return updatedCategory;
     } catch (error) {
       this.handleError(error, 'updating category');
     }
   }
 
-  // -- Remove Category --- //
+  /**
+   * Removes a category. Fails if products are associated.
+   */
   async remove(id: string): Promise<Category> {
-    const category = await this.findOne({ where: { id } });
+    await this.findOne({ where: { id } });
 
     const productCount = await this.prisma.product.count({
       where: { categoryId: id },
@@ -211,13 +234,88 @@ export class CategoriesService {
       where: { id },
     });
 
-    await this.cloudinary.deleteImagesByFolder(`categories/${category.id}`);
+    // Delete images using MediaService
+    await this.mediaService.deleteImagesByEntity('category', id);
 
     return deletedCategory;
   }
 
-  //----- Utils ----//
-  private async validateUniqueProduct(
+  /**
+   * Helper: builds Prisma include object for relations based on options
+   */
+
+  private buildCategoryInclude(options: {
+    withImages?: boolean;
+    withProducts?: boolean;
+    withProductCount?: boolean;
+  }): Prisma.CategoryInclude {
+    const { withImages, withProducts, withProductCount } = options;
+
+    return {
+      ...(withImages && { images: { select: { image: true } } }),
+      ...(withProducts && { products: true }),
+      ...(withProductCount && { _count: { select: { products: true } } }),
+    };
+  }
+
+  /**
+   * Recursively validates that there are no cyclic parent-child relations
+   */
+  private async validateNoCyclicReference(
+    categoryId: string,
+    newParentId: string,
+    visitedIds: Set<string> = new Set(),
+    depth: number = 0,
+    MAX_DEPTH: number = 50,
+  ): Promise<void> {
+    // Direct self-reference validation
+    if (categoryId === newParentId) {
+      throw new BadRequestException('A category cannot be its own parent');
+    }
+
+    // Protection against infinite loops
+    if (depth > MAX_DEPTH) {
+      throw new BadRequestException('Maximum category nesting depth exceeded');
+    }
+
+    // Circular reference detection
+    if (visitedIds.has(newParentId)) {
+      throw new BadRequestException(
+        'Circular reference detected in category structure',
+      );
+    }
+
+    visitedIds.add(newParentId);
+
+    // Get the parent of the new parent category
+    const parentCategory = await this.prisma.category.findUnique({
+      where: { id: newParentId },
+      select: { parentId: true },
+    });
+
+    if (!parentCategory) {
+      throw new NotFoundException('Parent category not found');
+    }
+
+    // If parent has no parent, there is no cycle
+    if (!parentCategory.parentId) {
+      return;
+    }
+
+    // Recursively validate the parent of the parent
+    await this.validateNoCyclicReference(
+      categoryId,
+      parentCategory.parentId,
+      visitedIds,
+      depth + 1,
+      MAX_DEPTH,
+    );
+  }
+
+  /**
+   * Checks for existing category by name or slug (unique constraint)
+   */
+  private async validateUniqueCategory(
     dto: CreateCategoryDto | UpdateCategoryDto,
     excludeId?: string,
   ) {
@@ -230,7 +328,7 @@ export class CategoriesService {
     if (dto.name) conditions.push({ name: dto.name });
     if (dto.slug) conditions.push({ slug: dto.slug });
 
-    const existingProduct = await this.prisma.category.findFirst({
+    const existingCategory = await this.prisma.category.findFirst({
       where: {
         AND: [excludeId ? { NOT: { id: excludeId } } : {}, { OR: conditions }],
       },
@@ -240,20 +338,22 @@ export class CategoriesService {
       },
     });
 
-    if (existingProduct) {
-      if (dto.name && existingProduct.name === dto.name) {
+    if (existingCategory) {
+      if (dto.name && existingCategory.name === dto.name) {
         throw new ConflictException('A category with this name already exists');
       }
-      if (dto.slug && existingProduct.slug === dto.slug) {
+      if (dto.slug && existingCategory.slug === dto.slug) {
         throw new ConflictException('A category with this slug already exists');
       }
     }
   }
 
-  private handleError(error: any, context: string): never {
+  /**
+   * Handles known Prisma and NestJS errors, throws a specific error if possible, otherwise internal server error.
+   */
+  private handleError(error: unknown, context: string): never {
     this.logger.error(`Error ${context}:`, error);
 
-    // Si ya es una excepción HTTP de NestJS, re-lanzarla
     if (
       error instanceof BadRequestException ||
       error instanceof NotFoundException ||
@@ -262,18 +362,21 @@ export class CategoriesService {
       throw error;
     }
 
-    // Manejar errores específicos de Prisma
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    if (error.code === 'P2025') {
-      throw new NotFoundException('Resource not found');
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      typeof error.code === 'string'
+    ) {
+      if (error.code === 'P2025') {
+        throw new NotFoundException('Resource not found');
+      }
+
+      if (error.code === 'P2003') {
+        throw new BadRequestException('Foreign key constraint failed');
+      }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    if (error.code === 'P2003') {
-      throw new BadRequestException('Foreign key constraint failed');
-    }
-
-    // Error genérico
     throw new InternalServerErrorException(
       `An error occurred while ${context}`,
     );

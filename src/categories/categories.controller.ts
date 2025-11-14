@@ -22,11 +22,11 @@ import {
 } from './dto';
 import { CategoriesService } from './categories.service';
 
+@Public()
 @Controller('categories')
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
-  @Public()
   @Post()
   @UseInterceptors(
     FilesInterceptor('files', 4, {
@@ -42,8 +42,8 @@ export class CategoriesController {
 
   @Public()
   @Get()
-  findAll(@Query() CategoryOptionsQueryDto: CategoryOptionsQueryDto) {
-    return this.categoriesService.findAll(CategoryOptionsQueryDto);
+  findAll(@Query() categoryOptionsQueryDto: CategoryOptionsQueryDto) {
+    return this.categoriesService.findAll(categoryOptionsQueryDto);
   }
 
   @Public()
@@ -60,7 +60,6 @@ export class CategoriesController {
     });
   }
 
-  @Public()
   @Patch(':id')
   @UseInterceptors(
     FilesInterceptor('files', 4, {
@@ -75,7 +74,6 @@ export class CategoriesController {
     return this.categoriesService.update(id, updateCategoryDto, files);
   }
 
-  @Public()
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.categoriesService.remove(id);

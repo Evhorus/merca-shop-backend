@@ -22,5 +22,13 @@ export class CategoryOptionsQueryDto extends PaginationDto {
   @IsOptional()
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
-  fetchAll?: boolean;
+  onlyRoot?: boolean; // Nuevo flag para traer solo categorías raíz
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
+  onlyChildren?: boolean; // Nuevo flag para traer solo categorías hijas
+
+  @IsOptional()
+  currentCategoryId?: string; // Id de categoría actual para excluirla del filtro
 }
