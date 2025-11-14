@@ -14,11 +14,11 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 
 import { Public } from 'src/auth';
 import { fileFilter } from 'src/files';
-import { PaginationDto } from 'src/common';
 
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
+import { ProductOptionsQueryDto } from './dto';
 
 @Public()
 @Controller('products')
@@ -39,8 +39,8 @@ export class ProductsController {
   }
 
   @Get()
-  findAll(@Query() paginationDto: PaginationDto) {
-    return this.productsService.findAll(paginationDto);
+  findAll(@Query() productOptionsQueryDto: ProductOptionsQueryDto) {
+    return this.productsService.findAll(productOptionsQueryDto);
   }
 
   @Get(':id')

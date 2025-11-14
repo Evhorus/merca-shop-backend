@@ -9,15 +9,18 @@ import {
 import { Prisma } from 'generated/prisma';
 
 import { PrismaService } from 'src/prisma';
-import { CloudinaryService } from 'src/cloudinary';
-import { FilesService } from 'src/files';
-import { PaginationDto, PaginatedResponse } from 'src/common';
+
+import { PaginatedResponse } from 'src/common';
 import { CategoriesService } from 'src/categories/categories.service';
-import { ColorsService } from 'src/colors';
 
 import { ProductMapper } from './mappers';
-import { CreateProductDto, UpdateProductDto } from './dto';
+import {
+  CreateProductDto,
+  ProductOptionsQueryDto,
+  UpdateProductDto,
+} from './dto';
 import { Product } from './entities';
+import { MediaService } from 'src/media/media.service';
 
 @Injectable()
 export class ProductsService {
@@ -25,10 +28,8 @@ export class ProductsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly filesService: FilesService,
-    private readonly cloudinary: CloudinaryService,
     private readonly categoriesService: CategoriesService,
-    private readonly colorsService: ColorsService,
+    private readonly mediaService: MediaService,
   ) {}
 
   async create(
@@ -80,18 +81,14 @@ export class ProductsService {
           return product;
         },
       );
-      if (files && files.length > 0) {
-        const { fileNames } = await this.filesService.uploadImages(
-          files,
-          `products/${createdProduct.id}`,
-        );
 
-        await this.prisma.productImage.createMany({
-          data: fileNames.map((image) => ({
-            productId: createdProduct.id,
-            image,
-          })),
-        });
+      // Upload images using MediaService
+      if (files && files.length > 0) {
+        await this.mediaService.uploadImages(
+          'product',
+          createdProduct.id,
+          files,
+        );
       }
 
       return createdProduct;
@@ -101,12 +98,13 @@ export class ProductsService {
   }
 
   async findAll(
-    paginationDto: PaginationDto,
+    productOptionsQueryDto: ProductOptionsQueryDto,
   ): Promise<PaginatedResponse<Product>> {
-    const { limit = 10, offset = 0, q } = paginationDto;
+    const { limit = 10, offset = 0, q, category } = productOptionsQueryDto;
 
     const where: Prisma.ProductWhereInput = {
       name: { contains: q, mode: 'insensitive' },
+      category: { slug: category },
     };
 
     const [products, totalProducts] = await Promise.all([
@@ -223,32 +221,14 @@ export class ProductsService {
         },
       );
 
-      let imagesNames: string[] = updateProductDto.images || [];
+      // Replace images using MediaService
+      await this.mediaService.replaceImages(
+        'product',
+        updatedProduct.id,
+        updateProductDto.images || [],
+        files,
+      );
 
-      if (files && files.length > 0) {
-        // Upload Images
-        const { fileNames } = await this.filesService.uploadImages(
-          files,
-          `products/${updatedProduct.id}`,
-        );
-        imagesNames.push(...fileNames);
-      }
-
-      imagesNames = Array.from(new Set(imagesNames));
-
-      if (imagesNames.length > 0) {
-        await this.prisma.productImage.deleteMany({
-          where: { productId: updatedProduct.id },
-        });
-
-        // Create Images
-        await this.prisma.productImage.createMany({
-          data: imagesNames.map((image) => ({
-            productId: updatedProduct.id,
-            image,
-          })),
-        });
-      }
       return updatedProduct;
     } catch (error) {
       this.handleError(error, 'updating product');
@@ -256,12 +236,12 @@ export class ProductsService {
   }
 
   async remove(id: string) {
-    const product = await this.findOne({ where: { id } });
+    await this.findOne({ where: { id } });
 
     const deleteProduct = await this.prisma.product.delete({
       where: { id },
     });
-    await this.cloudinary.deleteImagesByFolder(`products/${product.id}`);
+    await this.mediaService.deleteImagesByEntity('category', id);
 
     return deleteProduct;
   }

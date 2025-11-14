@@ -1,9 +1,13 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
 import { PaginationDto } from 'src/common';
 
 export class ProductOptionsQueryDto extends PaginationDto {
+  @IsOptional()
+  @IsString()
+  category?: string;
+
   @IsOptional()
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
