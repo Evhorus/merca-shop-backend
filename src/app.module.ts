@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
@@ -9,6 +9,7 @@ import { ProductsModule } from './products/products.module';
 import { ColorsModule } from './colors/colors.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { HealthCheckModule } from './health-check/health-check.module';
+import { HttpLoggerMiddleware } from './common';
 
 @Module({
   imports: [
@@ -24,4 +25,8 @@ import { HealthCheckModule } from './health-check/health-check.module';
     ColorsModule,
   ],
 })
-export class AppModule {}
+export class AppModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(HttpLoggerMiddleware).forRoutes('*');
+  }
+}
