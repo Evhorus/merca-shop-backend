@@ -10,16 +10,14 @@ import { Prisma } from 'generated/prisma';
 
 import { PrismaService } from 'src/prisma';
 
-import { PaginatedResponse } from 'src/common';
 import { CategoriesService } from 'src/categories/categories.service';
-
-import { ProductMapper } from './mappers';
 import {
   CreateProductDto,
   ProductOptionsQueryDto,
   UpdateProductDto,
 } from './dto';
-import { Product } from './entities';
+import slg from 'slug';
+
 import { MediaService } from 'src/media/media.service';
 
 @Injectable()
@@ -42,18 +40,19 @@ export class ProductsService {
       where: { id: createProductDto.categoryId },
     });
 
+    const slug = slg(createProductDto.name);
+
     try {
       const createdProduct = await this.prisma.$transaction(
         async (transaction) => {
           const product = await transaction.product.create({
             data: {
-              brand: createProductDto.brand,
+              brand: createProductDto.brand || null,
               categoryId: createProductDto.categoryId,
               description: createProductDto.description || null,
               isActive: createProductDto.isActive,
               name: createProductDto.name,
-              origin: createProductDto.origin,
-              slug: createProductDto.slug,
+              slug,
               price: createProductDto.price,
               sku: createProductDto.sku,
               colorId: createProductDto.colorId || null,
@@ -97,14 +96,22 @@ export class ProductsService {
     }
   }
 
-  async findAll(
-    productOptionsQueryDto: ProductOptionsQueryDto,
-  ): Promise<PaginatedResponse<Product>> {
-    const { limit = 10, offset = 0, q, category } = productOptionsQueryDto;
+  async findAll(productOptionsQueryDto: ProductOptionsQueryDto) {
+    const {
+      limit = 10,
+      offset = 0,
+      q,
+      category,
+      order,
+    } = productOptionsQueryDto;
 
     const where: Prisma.ProductWhereInput = {
       name: { contains: q, mode: 'insensitive' },
       category: { slug: category },
+    };
+
+    const orderBy: Prisma.ProductOrderByWithRelationInput = {
+      ...(order === 'newest' && { createdAt: 'asc' }),
     };
 
     const [products, totalProducts] = await Promise.all([
@@ -117,7 +124,7 @@ export class ProductsService {
           productVariants: { include: { productVariantDimensions: true } },
           productDimensions: true,
         },
-        orderBy: { id: 'asc' },
+        orderBy,
         where,
       }),
       this.prisma.product.count({ where }),
@@ -126,20 +133,19 @@ export class ProductsService {
     return {
       count: totalProducts,
       pages: Math.ceil(totalProducts / limit),
-      data: ProductMapper.toPresentationArray(products),
+      data: products,
     };
   }
 
-  async findOne({
-    where,
-  }: {
-    where: Prisma.ProductWhereUniqueInput;
-  }): Promise<Product> {
-    const product = await this.prisma.product.findUnique({
-      where,
+  async findOnePlain(term: string) {
+    const product = await this.prisma.product.findFirst({
+      where: {
+        OR: [{ id: term }, { slug: term }],
+      },
       include: {
         images: true,
         productFeatures: true,
+        color: true,
         productVariants: {
           include: {
             productVariantDimensions: true,
@@ -153,7 +159,19 @@ export class ProductsService {
       throw new NotFoundException(this.ERROR_MESSAGES.PRODUCT_NOT_FOUND);
     }
 
-    return ProductMapper.toPresentationFull(product);
+    return product;
+  }
+
+  async findOne({ where }: { where: Prisma.ProductWhereUniqueInput }) {
+    const product = await this.prisma.product.findUnique({
+      where,
+    });
+
+    if (!product) {
+      throw new NotFoundException(this.ERROR_MESSAGES.PRODUCT_NOT_FOUND);
+    }
+
+    return product;
   }
 
   async update(
@@ -161,8 +179,17 @@ export class ProductsService {
     updateProductDto: UpdateProductDto,
     files: Array<Express.Multer.File>,
   ) {
-    await this.findOne({ where: { id } });
+    const currentProduct = await this.findOne({ where: { id } });
     await this.validateUniqueProduct(updateProductDto, id);
+
+    let newSlug = currentProduct.slug;
+
+    if (
+      updateProductDto.name &&
+      updateProductDto.name !== currentProduct.name
+    ) {
+      newSlug = slg(updateProductDto.name);
+    }
 
     try {
       const updatedProduct = await this.prisma.$transaction(
@@ -170,17 +197,16 @@ export class ProductsService {
           const product = await transaction.product.update({
             where: { id },
             data: {
-              brand: updateProductDto.brand,
+              brand: updateProductDto.brand || null,
               categoryId: updateProductDto.categoryId,
               description: updateProductDto.description || null,
               isActive: updateProductDto.isActive,
               name: updateProductDto.name,
-              origin: updateProductDto.origin,
-              slug: updateProductDto.slug,
               price: updateProductDto.price,
               sku: updateProductDto.sku,
               colorId: updateProductDto.colorId || null,
               stock: updateProductDto.stock || 0,
+              slug: newSlug,
             },
           });
 
@@ -251,7 +277,7 @@ export class ProductsService {
     dto: CreateProductDto | UpdateProductDto,
     excludeId?: string,
   ) {
-    if (!dto.name && !dto.sku && !dto.slug) {
+    if (!dto.name && !dto.sku) {
       return;
     }
 
@@ -259,7 +285,6 @@ export class ProductsService {
 
     if (dto.name) conditions.push({ name: dto.name });
     if (dto.sku) conditions.push({ sku: dto.sku });
-    if (dto.slug) conditions.push({ slug: dto.slug });
 
     const existingProduct = await this.prisma.product.findFirst({
       where: {
@@ -278,9 +303,6 @@ export class ProductsService {
       }
       if (dto.sku && existingProduct.sku === dto.sku) {
         throw new ConflictException('A product with this SKU already exists');
-      }
-      if (dto.slug && existingProduct.slug === dto.slug) {
-        throw new ConflictException('A product with this slug already exists');
       }
     }
   }

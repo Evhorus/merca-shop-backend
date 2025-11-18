@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
 import { PaginationDto } from 'src/common';
 
@@ -22,4 +22,9 @@ export class ProductOptionsQueryDto extends PaginationDto {
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
   withVariants?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['newest', 'oldest', 'price_asc', 'price_desc'])
+  order?: string;
 }

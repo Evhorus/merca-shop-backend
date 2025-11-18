@@ -43,11 +43,9 @@ export class ProductsController {
     return this.productsService.findAll(productOptionsQueryDto);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.productsService.findOne({
-      where: { id },
-    });
+  @Get(':term')
+  findOne(@Param('term') term: string) {
+    return this.productsService.findOnePlain(term);
   }
 
   @Patch(':id')

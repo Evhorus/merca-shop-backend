@@ -10,8 +10,6 @@ import {
   IsOptional,
   IsBoolean,
   IsEnum,
-  MinLength,
-  NotContains,
   Matches,
   IsArray,
   IsNumber,
@@ -104,10 +102,6 @@ export class CreateProductDto {
 
   @IsString()
   @IsNotEmpty()
-  origin: string;
-
-  @IsString()
-  @IsNotEmpty()
   sku: string;
 
   @IsString()
@@ -119,20 +113,11 @@ export class CreateProductDto {
   description?: string;
 
   @IsString()
-  @IsNotEmpty()
-  @Matches(/^[a-z0-9-]+$/, {
-    message: 'Slug only allows lowercase letters, numbers and hyphens.',
-  })
-  @MinLength(3)
-  @NotContains(' ', { message: 'Slug should NOT contain whitespace.' })
-  slug: string;
-
-  @IsString()
   price: string;
 
   @IsString()
-  @IsNotEmpty()
-  brand: string;
+  @IsOptional()
+  brand?: string;
 
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
@@ -146,8 +131,9 @@ export class CreateProductDto {
   @IsUUID()
   categoryId: string;
 
+  @IsOptional()
   @IsUUID()
-  colorId: string;
+  colorId?: string;
 
   @IsOptional()
   @Transform(({ value }) =>

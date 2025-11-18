@@ -1,5 +1,4 @@
 import { NestFactory } from '@nestjs/core';
-
 import { Logger, ValidationPipe } from '@nestjs/common';
 
 import { AppModule } from './app.module';
@@ -11,7 +10,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
-    origin: envs.CLIENT_URL,
+    origin: [envs.CLIENT_URL, envs.CLIENT_URL_2],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
