@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Category, Prisma } from 'generated/prisma';
+import slg from 'slug';
 
 import { ResourceNotFoundException } from 'src/common';
 import { PrismaService } from 'src/prisma';
@@ -57,7 +58,7 @@ export class CategoriesService {
         data: {
           isActive: createCategoryDto.isActive,
           name: createCategoryDto.name,
-          slug: createCategoryDto.slug,
+          slug: slg(createCategoryDto.name),
           description: createCategoryDto.description,
           parentId: createCategoryDto.parentId || null,
         },
@@ -170,7 +171,17 @@ export class CategoriesService {
     updateCategoryDto: UpdateCategoryDto,
     files: Array<Express.Multer.File>,
   ) {
+    const currentCategory = await this.findOne({ where: { id } });
     await this.validateUniqueCategory(updateCategoryDto, id);
+
+    let newSlug = currentCategory.slug;
+
+    if (
+      updateCategoryDto.name &&
+      updateCategoryDto.name !== currentCategory.name
+    ) {
+      newSlug = slg(updateCategoryDto.name);
+    }
 
     // Validate parent relationship and max depth
     if (updateCategoryDto.parentId) {
@@ -195,7 +206,7 @@ export class CategoriesService {
           description: updateCategoryDto.description || null,
           isActive: updateCategoryDto.isActive,
           name: updateCategoryDto.name,
-          slug: updateCategoryDto.slug,
+          slug: newSlug,
           parentId: updateCategoryDto.parentId || null,
         },
       });
@@ -319,14 +330,13 @@ export class CategoriesService {
     dto: CreateCategoryDto | UpdateCategoryDto,
     excludeId?: string,
   ) {
-    if (!dto.name && !dto.slug) {
+    if (!dto.name) {
       return;
     }
 
     const conditions: Prisma.CategoryWhereInput[] = [];
 
     if (dto.name) conditions.push({ name: dto.name });
-    if (dto.slug) conditions.push({ slug: dto.slug });
 
     const existingCategory = await this.prisma.category.findFirst({
       where: {
@@ -341,9 +351,6 @@ export class CategoriesService {
     if (existingCategory) {
       if (dto.name && existingCategory.name === dto.name) {
         throw new ConflictException('A category with this name already exists');
-      }
-      if (dto.slug && existingCategory.slug === dto.slug) {
-        throw new ConflictException('A category with this slug already exists');
       }
     }
   }

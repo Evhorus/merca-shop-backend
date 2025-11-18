@@ -6,6 +6,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import slg from 'slug';
+
 import { Prisma } from 'generated/prisma';
 
 import { PrismaService } from 'src/prisma';
@@ -16,7 +18,6 @@ import {
   ProductOptionsQueryDto,
   UpdateProductDto,
 } from './dto';
-import slg from 'slug';
 
 import { MediaService } from 'src/media/media.service';
 
@@ -40,8 +41,6 @@ export class ProductsService {
       where: { id: createProductDto.categoryId },
     });
 
-    const slug = slg(createProductDto.name);
-
     try {
       const createdProduct = await this.prisma.$transaction(
         async (transaction) => {
@@ -52,7 +51,7 @@ export class ProductsService {
               description: createProductDto.description || null,
               isActive: createProductDto.isActive,
               name: createProductDto.name,
-              slug,
+              slug: slg(createProductDto.name),
               price: createProductDto.price,
               sku: createProductDto.sku,
               colorId: createProductDto.colorId || null,
