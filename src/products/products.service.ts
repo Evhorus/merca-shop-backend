@@ -96,18 +96,14 @@ export class ProductsService {
   }
 
   async findAll(productOptionsQueryDto: ProductOptionsQueryDto) {
-    const {
-      limit = 10,
-      offset = 0,
-      q,
-      category,
-      order,
-    } = productOptionsQueryDto;
+    const { limit = 12, page = 1, q, category, order } = productOptionsQueryDto;
 
     const where: Prisma.ProductWhereInput = {
       name: { contains: q, mode: 'insensitive' },
       category: { slug: category },
     };
+
+    const offset = (page - 1) * limit;
 
     const orderBy: Prisma.ProductOrderByWithRelationInput = {
       ...(order === 'newest' && { createdAt: 'asc' }),

@@ -84,8 +84,8 @@ export class CategoriesService {
    */
   async findAll(categoryOptionsQueryDto: CategoryOptionsQueryDto) {
     const {
-      limit = 10,
-      offset = 0,
+      limit = 12,
+      page = 1,
       q,
       withImages,
       withProductCount,
@@ -94,6 +94,8 @@ export class CategoriesService {
       onlyChildren,
       currentCategoryId,
     } = categoryOptionsQueryDto;
+
+    const offset = (page - 1) * limit;
 
     const where: Prisma.CategoryWhereInput = {
       name: { contains: q, mode: 'insensitive' },

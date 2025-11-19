@@ -8,9 +8,9 @@ export class PaginationDto {
   limit?: number;
 
   @IsOptional()
-  @Min(0)
-  @Type(() => Number) // enableImplicitConversions: true
-  offset?: number;
+  @IsPositive()
+  @Type(() => Number)
+  page?: number;
 
   @IsOptional()
   gender?: 'men' | 'women' | 'unisex' | 'kid' | '';
