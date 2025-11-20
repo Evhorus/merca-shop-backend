@@ -8,14 +8,14 @@ async function bootstrap() {
   const logger = new Logger('MercaShopMain');
 
   const app = await NestFactory.create(AppModule);
-
+  app.setGlobalPrefix('api');
   app.enableCors({
     origin: [envs.CLIENT_URL, envs.CLIENT_URL_2],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   });
-  app.setGlobalPrefix('api');
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

@@ -27,6 +27,6 @@ import { HttpLoggerMiddleware } from './common';
 })
 export class AppModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(HttpLoggerMiddleware).forRoutes('*');
+    consumer.apply(HttpLoggerMiddleware).forRoutes('/*path');
   }
 }
