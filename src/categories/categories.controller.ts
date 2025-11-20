@@ -47,17 +47,9 @@ export class CategoriesController {
   }
 
   @Public()
-  @Get(':id')
-  findOne(
-    @Query() categoryOptionsQueryDto: CategoryOptionsQueryDto,
-    @Param('id') id: string,
-  ) {
-    return this.categoriesService.findOne({
-      where: { id },
-      withImages: categoryOptionsQueryDto.withImages,
-      withProducts: categoryOptionsQueryDto.withProducts,
-      withProductCount: categoryOptionsQueryDto.withProductCount,
-    });
+  @Get(':term')
+  findOne(@Param('term') term: string) {
+    return this.categoriesService.findOnePlain(term);
   }
 
   @Patch(':id')

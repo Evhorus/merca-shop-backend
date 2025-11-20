@@ -17,7 +17,7 @@ import {
   CreateCategoryDto,
   UpdateCategoryDto,
 } from './dto';
-import { CategoryWithAllRelations } from './interfaces';
+
 import { MediaService } from 'src/media/media.service';
 
 @Injectable()
@@ -42,8 +42,6 @@ export class CategoriesService {
     if (createCategoryDto.parentId) {
       const parentCategory = await this.findOne({
         where: { id: createCategoryDto.parentId },
-        withImages: false,
-        withProducts: false,
       });
 
       if (parentCategory.parentId) {
@@ -136,26 +134,25 @@ export class CategoriesService {
   /**
    * Finds a category, includes relations based on options
    */
-  async findOne({
-    where,
-    withImages,
-    withProducts,
-    withProductCount,
-  }: {
-    where: Prisma.CategoryWhereUniqueInput;
-    withImages?: boolean;
-    withProducts?: boolean;
-    withProductCount?: boolean;
-  }): Promise<CategoryWithAllRelations> {
-    const include = this.buildCategoryInclude({
-      withImages,
-      withProducts,
-      withProductCount,
+  async findOnePlain(term: string) {
+    const category = await this.prisma.category.findFirst({
+      where: { OR: [{ id: term }, { slug: term }] },
+      include: {
+        images: { select: { image: true } },
+        _count: { select: { products: true } },
+      },
     });
 
+    if (!category) {
+      throw new ResourceNotFoundException('Category');
+    }
+
+    return category;
+  }
+
+  async findOne({ where }: { where: Prisma.CategoryWhereUniqueInput }) {
     const category = await this.prisma.category.findUnique({
       where,
-      include,
     });
 
     if (!category) {
@@ -190,8 +187,6 @@ export class CategoriesService {
       await this.validateNoCyclicReference(id, updateCategoryDto.parentId);
       const parentCategory = await this.findOne({
         where: { id: updateCategoryDto.parentId },
-        withImages: false,
-        withProducts: false,
       });
 
       if (parentCategory.parentId) {
