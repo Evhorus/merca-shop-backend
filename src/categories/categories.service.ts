@@ -57,7 +57,7 @@ export class CategoriesService {
           isActive: createCategoryDto.isActive,
           name: createCategoryDto.name,
           slug: slg(createCategoryDto.name),
-          description: createCategoryDto.description,
+          description: createCategoryDto.description || null,
           parentId: createCategoryDto.parentId || null,
         },
       });

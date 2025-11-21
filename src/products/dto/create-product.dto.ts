@@ -10,7 +10,6 @@ import {
   IsOptional,
   IsBoolean,
   IsEnum,
-  Matches,
   IsArray,
   IsNumber,
 } from 'class-validator';
@@ -105,10 +104,6 @@ export class CreateProductDto {
   sku: string;
 
   @IsString()
-  @Matches(/^\S+(?: \S+)*$/, {
-    message:
-      'Description must be normalized: no leading or trailing spaces, and no consecutive spaces',
-  })
   @IsOptional()
   description?: string;
 
